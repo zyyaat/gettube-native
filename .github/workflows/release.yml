@@ -34,9 +34,8 @@ jobs:
       - name: Collect and rename APKs
         run: |
           mkdir -p dist
-          OUT=app/build/outputs/apk/generic/release
-          ls -la "$OUT"
-          for f in "$OUT"/*.apk; do
+          find app/build/outputs -type f -name '*.apk' | tee /tmp/apks.txt
+          while read -r f; do
             low=$(basename "$f" | tr 'A-Z' 'a-z')
             base=$(basename "$f")
             case "$low" in
@@ -45,7 +44,7 @@ jobs:
               *armeabi-v7a*)  cp "$f" "dist/GetTube-arm32-r${GITHUB_RUN_NUMBER}.apk" ;;
               *) echo "skip $base" ;;
             esac
-          done
+          done < /tmp/apks.txt
           ls -la dist/
 
       - name: Publish GitHub Release
