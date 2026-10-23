@@ -29,7 +29,7 @@ jobs:
       - name: Build release APKs (universal + per-ABI)
         run: |
           chmod +x gradlew
-          ./gradlew buildGenericRelease --no-daemon --stacktrace
+          ./gradlew assembleGenericRelease --no-daemon --stacktrace
 
       - name: Collect and rename APKs
         run: |
