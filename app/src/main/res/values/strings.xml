@@ -450,4 +450,15 @@
         <item quantity="one">%d audio</item>
         <item quantity="other">%d audios</item>
     </plurals>
+    <string name="search_hint">Search YouTube…</string>
+    <string name="searching">Searching…</string>
+    <string name="no_results">No results found</string>
+    <string name="search_failed">Search failed — check your connection</string>
+    <string name="retry">Retry</string>
+    <string name="available_qualities">Available qualities</string>
+    <string name="fetching_video_info">Fetching video info…</string>
+    <string name="mp3_audio">MP3 audio</string>
+    <string name="original_audio">Original audio</string>
+    <string name="all_formats">All formats</string>
+    <string name="audio_options">Audio options</string>
 </resources>

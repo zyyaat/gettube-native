@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -57,6 +58,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetState
@@ -65,6 +67,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,6 +77,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -89,6 +94,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.junkfood.seal.App
 import com.junkfood.seal.R
 import com.junkfood.seal.ui.common.HapticFeedback.longPressHapticFeedback
@@ -121,6 +127,7 @@ import com.junkfood.seal.util.AUDIO_CONVERT
 import com.junkfood.seal.util.AUDIO_FORMAT
 import com.junkfood.seal.util.AUDIO_QUALITY
 import com.junkfood.seal.util.COOKIES
+import com.junkfood.seal.util.CONVERT_MP3
 import com.junkfood.seal.util.CUSTOM_COMMAND
 import com.junkfood.seal.util.DatabaseUtil
 import com.junkfood.seal.util.DownloadType
@@ -141,9 +148,13 @@ import com.junkfood.seal.util.TEMPLATE_ID
 import com.junkfood.seal.util.THUMBNAIL
 import com.junkfood.seal.util.ToastUtil
 import com.junkfood.seal.util.USE_CUSTOM_AUDIO_PRESET
+import com.junkfood.seal.util.VideoInfo
 import com.junkfood.seal.util.VIDEO_FORMAT
 import com.junkfood.seal.util.VIDEO_QUALITY
+import com.yausername.youtubedl_android.YoutubeDL
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 private fun DownloadType.label(): String =
@@ -512,6 +523,82 @@ private fun ConfigurePagePreview() {
     }
 }
 
+private const val INFO_TASK_KEY = "SheetInfo"
+
+private sealed interface SheetInfoState {
+    data object Loading : SheetInfoState
+
+    data class Done(val info: VideoInfo) : SheetInfoState
+
+    data object Failed : SheetInfoState
+}
+
+private fun VideoInfo.availableVideoHeights(): List<Int> =
+    formats.orEmpty()
+        .filter { it.containsVideo() && it.height != null && it.height!! > 0 }
+        .map { it.height!!.toInt() }
+        .distinct()
+        .sortedDescending()
+
+private fun heightToResIndex(height: Int): Int =
+    when {
+        height >= 2160 -> 1
+        height >= 1440 -> 2
+        height >= 1080 -> 3
+        height >= 720 -> 4
+        height >= 480 -> 5
+        height >= 360 -> 6
+        else -> 7
+    }
+
+private fun heightLabel(height: Int): String {
+    val tag =
+        when (height) {
+            2160 -> "4K"
+            1440 -> "2K"
+            1080 -> "FHD"
+            720 -> "HD"
+            else -> ""
+        }
+    return if (tag.isEmpty()) "${height}p" else "${height}p $tag"
+}
+
+@Composable
+private fun SheetVideoHeader(info: VideoInfo) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = info.thumbnail,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier =
+                Modifier.width(120.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp)),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = info.title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            info.channel?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ConfigurePage(
     modifier: Modifier = Modifier,
@@ -542,6 +629,27 @@ private fun ConfigurePage(
         }
     }
 
+    // GetTube-style: fetch the video's real info so only qualities that actually
+    // exist are offered. Falls back to the generic preset UI on failure.
+    var infoState by remember(url) { mutableStateOf<SheetInfoState>(SheetInfoState.Loading) }
+    var selectedHeight by remember(url) { mutableStateOf<Int?>(null) }
+    var preferMp3 by remember(url) { mutableStateOf(true) }
+
+    LaunchedEffect(url) {
+        val result =
+            withContext(Dispatchers.IO) {
+                DownloadUtil.fetchVideoInfoFromUrl(url = url, taskKey = INFO_TASK_KEY)
+            }
+        infoState =
+            result.fold(
+                onSuccess = { SheetInfoState.Done(it) },
+                onFailure = { SheetInfoState.Failed },
+            )
+    }
+    DisposableEffect(url) {
+        onDispose { YoutubeDL.destroyProcessById(INFO_TASK_KEY) }
+    }
+
     Column {
         Column(modifier = modifier.padding(horizontal = 20.dp)) {
             Header(
@@ -549,6 +657,10 @@ private fun ConfigurePage(
                 title = stringResource(R.string.settings_before_download),
                 icon = Icons.Outlined.DoneAll,
             )
+            when (val fetched = infoState) {
+                is SheetInfoState.Done -> SheetVideoHeader(info = fetched.info)
+                else -> {}
+            }
             DrawerSheetSubtitle(text = stringResource(id = R.string.download_type))
             DownloadTypeSelectionGroup(
                 typeEntries = config.typeEntries,
@@ -557,24 +669,143 @@ private fun ConfigurePage(
             )
             Column(modifier = Modifier.animateContentSize()) {
                 if (selectedType != Command) {
-                    DrawerSheetSubtitle(
-                        text = stringResource(id = R.string.format_selection),
-                        modifier = Modifier,
-                    )
-                    Preset(
-                        modifier = Modifier,
-                        preference = preferences,
-                        selected = !useFormatSelection,
-                        downloadType = selectedType,
-                        onClick = { useFormatSelection = false },
-                        showEditIcon = !useFormatSelection && selectedType != Playlist,
-                        onEdit = { onPresetEdit(selectedType) },
-                    )
-                    Custom(
-                        selected = useFormatSelection,
-                        enabled = selectedType != Playlist,
-                        onClick = { useFormatSelection = true },
-                    )
+                    if (selectedType == Playlist) {
+                        DrawerSheetSubtitle(
+                            text = stringResource(id = R.string.format_selection),
+                            modifier = Modifier,
+                        )
+                        Preset(
+                            modifier = Modifier,
+                            preference = preferences,
+                            selected = !useFormatSelection,
+                            downloadType = selectedType,
+                            onClick = { useFormatSelection = false },
+                            showEditIcon = false,
+                            onEdit = { onPresetEdit(selectedType) },
+                        )
+                        Custom(
+                            selected = useFormatSelection,
+                            enabled = false,
+                            onClick = { useFormatSelection = true },
+                        )
+                    } else {
+                        when (val fetched = infoState) {
+                            is SheetInfoState.Done -> {
+                                if (selectedType == Video) {
+                                    DrawerSheetSubtitle(
+                                        text =
+                                            stringResource(id = R.string.available_qualities),
+                                        modifier = Modifier,
+                                    )
+                                    val heights = fetched.info.availableVideoHeights()
+                                    if (heights.isEmpty()) {
+                                        Preset(
+                                            modifier = Modifier,
+                                            preference = preferences,
+                                            selected = !useFormatSelection,
+                                            downloadType = selectedType,
+                                            onClick = { useFormatSelection = false },
+                                            showEditIcon = !useFormatSelection,
+                                            onEdit = { onPresetEdit(selectedType) },
+                                        )
+                                    } else {
+                                        LazyRow {
+                                            items(heights) { height ->
+                                                VideoFilterChip(
+                                                    selected = selectedHeight == height,
+                                                    onClick = {
+                                                        selectedHeight = height
+                                                        useFormatSelection = false
+                                                    },
+                                                    label = heightLabel(height),
+                                                )
+                                            }
+                                            item {
+                                                VideoFilterChip(
+                                                    selected = useFormatSelection,
+                                                    onClick = { useFormatSelection = true },
+                                                    label = stringResource(R.string.all_formats),
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    DrawerSheetSubtitle(
+                                        text = stringResource(id = R.string.audio_options),
+                                        modifier = Modifier,
+                                    )
+                                    LazyRow {
+                                        item {
+                                            VideoFilterChip(
+                                                selected = preferMp3,
+                                                onClick = { preferMp3 = true },
+                                                label = stringResource(R.string.mp3_audio),
+                                            )
+                                        }
+                                        item {
+                                            VideoFilterChip(
+                                                selected = !preferMp3,
+                                                onClick = { preferMp3 = false },
+                                                label =
+                                                    stringResource(R.string.original_audio),
+                                            )
+                                        }
+                                        item {
+                                            VideoFilterChip(
+                                                selected = useFormatSelection,
+                                                onClick = { useFormatSelection = true },
+                                                label = stringResource(R.string.all_formats),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            SheetInfoState.Loading -> {
+                                Row(
+                                    modifier =
+                                        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = stringResource(R.string.fetching_video_info),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    LinearProgressIndicator(
+                                        modifier =
+                                            Modifier.padding(start = 12.dp).weight(1f),
+                                    )
+                                }
+                            }
+
+                            SheetInfoState.Failed -> {
+                                DrawerSheetSubtitle(
+                                    text = stringResource(id = R.string.format_selection),
+                                    modifier = Modifier,
+                                )
+                                Preset(
+                                    modifier = Modifier,
+                                    preference = preferences,
+                                    selected = !useFormatSelection,
+                                    downloadType = selectedType,
+                                    onClick = { useFormatSelection = false },
+                                    showEditIcon = !useFormatSelection,
+                                    onEdit = { onPresetEdit(selectedType) },
+                                )
+                                Custom(
+                                    selected = useFormatSelection,
+                                    enabled = true,
+                                    onClick = { useFormatSelection = true },
+                                )
+                            }
+                        }
+                    }
                 } else {
                     if (showTemplateSelectionDialog) {
                         TemplatePickerDialog { showTemplateSelectionDialog = false }
@@ -637,11 +868,23 @@ private fun ConfigurePage(
                         downloadType = selectedType,
                     )
                 )
+                val base = preferences.copy(extractAudio = selectedType == Audio)
+                val prefs =
+                    when {
+                        selectedType == Video && selectedHeight != null ->
+                            base.copy(videoResolution = heightToResIndex(selectedHeight!!))
+
+                        selectedType == Audio && infoState is SheetInfoState.Done ->
+                            base.copy(
+                                convertAudio = preferMp3,
+                                audioConvertFormat =
+                                    if (preferMp3) CONVERT_MP3 else base.audioConvertFormat,
+                            )
+
+                        else -> base
+                    }
                 onActionPost(
-                    Action.DownloadWithPreset(
-                        urlList = listOf(url),
-                        preferences = preferences.copy(extractAudio = selectedType == Audio),
-                    )
+                    Action.DownloadWithPreset(urlList = listOf(url), preferences = prefs)
                 )
             },
             onFetchInfo = {

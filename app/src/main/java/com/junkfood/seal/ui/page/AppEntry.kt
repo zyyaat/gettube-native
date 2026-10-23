@@ -65,6 +65,7 @@ import com.junkfood.seal.ui.page.settings.network.CookiesViewModel
 import com.junkfood.seal.ui.page.settings.network.NetworkPreferences
 import com.junkfood.seal.ui.page.settings.network.WebViewPage
 import com.junkfood.seal.ui.page.settings.troubleshooting.TroubleShootingPage
+import com.junkfood.seal.ui.page.search.SearchPage
 import com.junkfood.seal.ui.page.videolist.VideoListPage
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -72,7 +73,7 @@ import org.koin.androidx.compose.koinViewModel
 private const val TAG = "HomeEntry"
 
 private val TopDestinations =
-    listOf(Route.HOME, Route.TASK_LIST, Route.SETTINGS_PAGE, Route.DOWNLOADS)
+    listOf(Route.HOME, Route.SEARCH, Route.TASK_LIST, Route.SETTINGS_PAGE, Route.DOWNLOADS)
 
 @Composable
 fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
@@ -149,6 +150,19 @@ fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
                         onMenuOpen = {
                             view.slightHapticFeedback()
                             scope.launch { drawerState.open() }
+                        },
+                        onSearchOpen = {
+                            navController.navigate(Route.SEARCH) { launchSingleTop = true }
+                        },
+                    )
+                }
+                animatedComposable(Route.SEARCH) {
+                    SearchPage(
+                        onNavigateBack = onNavigateBack,
+                        onVideoClick = { url ->
+                            dialogViewModel.postAction(
+                                DownloadDialogViewModel.Action.ShowSheet(listOf(url))
+                            )
                         },
                     )
                 }

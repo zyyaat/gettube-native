@@ -451,4 +451,15 @@
     <string name="issue_tracker">متتبع المشكلة</string>
     <string name="issue_tracker_hint">هل واجهت خطًأ؟ قبل الإبلاغ عن مشكلة جديدة، يرجى البحث في أداة تتبع المشاكل لدينا. لقد عولجت العديد من المشاكل الشائعة وتوثيقها بالفعل هناك.</string>
     <string name="media_info">معلومات الوسائط</string>
+    <string name="search_hint">ابحث في يوتيوب…</string>
+    <string name="searching">جارٍ البحث…</string>
+    <string name="no_results">لا توجد نتائج</string>
+    <string name="search_failed">تعذر البحث — تحقق من الاتصال</string>
+    <string name="retry">إعادة المحاولة</string>
+    <string name="available_qualities">الجودات المتاحة</string>
+    <string name="fetching_video_info">جارٍ جلب معلومات الفيديو…</string>
+    <string name="mp3_audio">صوت MP3</string>
+    <string name="original_audio">الصوت الأصلي</string>
+    <string name="all_formats">كل الصيغ</string>
+    <string name="audio_options">خيارات الصوت</string>
 </resources>

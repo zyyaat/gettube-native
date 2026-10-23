@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -197,6 +198,7 @@ sealed interface UiAction {
 fun DownloadPageV2(
     modifier: Modifier = Modifier,
     onMenuOpen: (() -> Unit) = {},
+    onSearchOpen: (() -> Unit) = {},
     dialogViewModel: DownloadDialogViewModel,
     downloader: DownloaderV2 = koinInject(),
 ) {
@@ -214,6 +216,7 @@ fun DownloadPageV2(
             dialogViewModel.postAction(Action.ShowSheet())
         },
         onMenuOpen = onMenuOpen,
+        onSearchOpen = onSearchOpen,
     ) { task, action ->
         view.slightHapticFeedback()
         when (action) {
@@ -319,6 +322,7 @@ fun DownloadPageImplV2(
     taskDownloadStateMap: SnapshotStateMap<Task, Task.State>,
     downloadCallback: () -> Unit = {},
     onMenuOpen: (() -> Unit) = {},
+    onSearchOpen: (() -> Unit) = {},
     onActionPost: (Task, UiAction) -> Unit,
 ) {
     var activeFilter by remember { mutableStateOf(Filter.All) }
@@ -383,7 +387,11 @@ fun DownloadPageImplV2(
             CompositionLocalProvider(LocalOverscrollFactory provides null) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Spacer(Modifier.height(with(LocalDensity.current) { headerOffset.toDp() }))
-                    Header(onMenuOpen = onMenuOpen, modifier = Modifier.padding(horizontal = 16.dp))
+                    Header(
+                        onMenuOpen = onMenuOpen,
+                        onSearchOpen = onSearchOpen,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
                     SelectionGroupRow(
                         modifier =
                             Modifier.horizontalScroll(rememberScrollState())
@@ -535,20 +543,35 @@ fun DownloadPageImplV2(
 }
 
 @Composable
-fun Header(modifier: Modifier = Modifier, onMenuOpen: () -> Unit = {}) {
+fun Header(
+    modifier: Modifier = Modifier,
+    onMenuOpen: () -> Unit = {},
+    onSearchOpen: (() -> Unit) = {},
+) {
     val windowWidthSizeClass = LocalWindowWidthState.current
     when (windowWidthSizeClass) {
         WindowWidthSizeClass.Expanded -> {
-            HeaderExpanded(modifier = modifier)
+            HeaderExpanded(
+                modifier = modifier,
+                onSearchOpen = onSearchOpen,
+            )
         }
         else -> {
-            HeaderCompact(modifier = modifier, onMenuOpen = onMenuOpen)
+            HeaderCompact(
+                modifier = modifier,
+                onMenuOpen = onMenuOpen,
+                onSearchOpen = onSearchOpen,
+            )
         }
     }
 }
 
 @Composable
-private fun HeaderCompact(modifier: Modifier = Modifier, onMenuOpen: () -> Unit) {
+private fun HeaderCompact(
+    modifier: Modifier = Modifier,
+    onMenuOpen: () -> Unit,
+    onSearchOpen: (() -> Unit) = {},
+) {
 
     Row(modifier = modifier.height(64.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onMenuOpen, modifier = Modifier) {
@@ -567,17 +590,30 @@ private fun HeaderCompact(modifier: Modifier = Modifier, onMenuOpen: () -> Unit)
                     fontWeight = FontWeight.Medium,
                 ),
         )
+        Spacer(modifier = Modifier.weight(1f))
+        IconButton(onClick = onSearchOpen) {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = stringResource(R.string.search),
+            )
+        }
     }
 }
 
 @Composable
-private fun HeaderExpanded(modifier: Modifier = Modifier) {
+private fun HeaderExpanded(modifier: Modifier = Modifier, onSearchOpen: (() -> Unit) = {}) {
     Row(modifier = modifier.height(64.dp), verticalAlignment = Alignment.CenterVertically) {
-        Spacer(modifier = Modifier.width(4.dp))
         Text(
             stringResource(R.string.download_queue),
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Medium),
         )
+        Spacer(modifier = Modifier.weight(1f))
+        IconButton(onClick = onSearchOpen) {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = stringResource(R.string.search),
+            )
+        }
     }
     Spacer(Modifier.height(4.dp))
 }

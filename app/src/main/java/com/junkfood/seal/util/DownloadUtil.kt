@@ -59,6 +59,8 @@ object DownloadUtil {
 
     private const val TAG = "DownloadUtil"
 
+    const val SEARCH_PROCESS_ID = "ytsearch"
+
     const val BASENAME = "%(title).200B"
 
     const val EXTENSION = ".%(ext)s"
@@ -122,6 +124,24 @@ object DownloadUtil {
                 if (playlistInfo.type != "playlist") {
                     jsonFormat.decodeFromString<VideoInfo>(this)
                 } else playlistInfo
+            }
+        }
+
+    @CheckResult
+    fun searchYouTube(query: String, resultCount: Int = 20): Result<List<PlaylistEntry>> =
+        YoutubeDL.runCatching {
+            val request =
+                YoutubeDLRequest("ytsearch$resultCount:$query").apply {
+                    addOption("--flat-playlist")
+                    addOption("--dump-single-json")
+                    addOption("-R", "1")
+                    addOption("--socket-timeout", "5")
+                }
+            execute(request, SEARCH_PROCESS_ID).out.run {
+                jsonFormat
+                    .decodeFromString<PlaylistResult>(this)
+                    .entries
+                    .orEmpty()
             }
         }
 

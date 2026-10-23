@@ -18,6 +18,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.Terminal
@@ -175,6 +177,16 @@ fun NavigationDrawerSheetContent(
     ) {
         Spacer(Modifier.height(72.dp))
         ProvideTextStyle(MaterialTheme.typography.labelLarge) {
+            NavigationDrawerItem(
+                label = { Text(stringResource(R.string.search)) },
+                icon = { Icon(Icons.Outlined.Search, null) },
+                onClick = {
+                    scope
+                        .launch { onDismissRequest() }
+                        .invokeOnCompletion { onNavigateToRoute(Route.SEARCH) }
+                },
+                selected = currentRoute == Route.SEARCH,
+            )
             NavigationDrawerItem(
                 label = { Text(stringResource(R.string.download_queue)) },
                 icon = { Icon(Icons.Filled.Download, null) },
@@ -346,6 +358,18 @@ fun NavigationRailContent(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         val scope = rememberCoroutineScope()
+        NavigationRailItemVariant(
+            icon = {
+                Icon(
+                    if (currentTopDestination == Route.SEARCH) Icons.Filled.Search
+                    else Icons.Outlined.Search,
+                    stringResource(R.string.search),
+                )
+            },
+            modifier = Modifier,
+            selected = currentTopDestination == Route.SEARCH,
+            onClick = { onNavigateToRoute(Route.SEARCH) },
+        )
         NavigationRailItemVariant(
             icon = {
                 Icon(
