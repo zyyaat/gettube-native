@@ -255,6 +255,26 @@ object DownloadUtil {
         // Reuse a fresh info fetch (e.g. the one made by the quality sheet)
         // instead of spawning yt-dlp twice for the same video.
         getCachedVideoInfo(url, playlistIndex)?.let { return Result.success(it) }
+
+        // GetTube build-12: native InnerTube fast path (NewPipeExtractor) —
+        // the same mechanism NewPipe-class apps use: direct requests to
+        // YouTube's player API, no Python process, no yt-dlp, and no QuickJS
+        // signature-challenge solving at all. Measured at ~2-4s end-to-end
+        // with the full quality list, versus 15-20s+ for on-device yt-dlp
+        // extraction. The synthesized raw JSON is yt-dlp-compatible so the
+        // --load-info-json download path works unchanged. Any failure (live
+        // streams, age-gated videos, extractor breakage) falls through to the
+        // pinned yt-dlp chain below.
+        if (playlistIndex == null && NewPipeVideoInfoFetcher.isYouTubeVideoUrl(url)) {
+            NewPipeVideoInfoFetcher.fetchVideoInfo(url)
+                .getOrNull()
+                ?.takeIf { !it.first.formats.isNullOrEmpty() }
+                ?.let { (info, rawJson) ->
+                    cacheVideoInfo(url, playlistIndex, info, rawJson)
+                    return Result.success(info)
+                }
+        }
+
         with(preferences) {
             fun buildRequest(pinClients: Boolean): YoutubeDLRequest =
                 YoutubeDLRequest(url).apply {

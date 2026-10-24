@@ -183,6 +183,9 @@ dependencies {
 
     implementation(libs.okhttp)
 
+    // GetTube: native InnerTube fast path for video info (quality sheet)
+    implementation(libs.newpipe.extractor)
+
     implementation(libs.bundles.youtubedlAndroid)
 
     implementation(libs.mmkv)

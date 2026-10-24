@@ -26,6 +26,7 @@ coroutines = "1.9.0"
 datetime = "0.6.1"
 serialization = "1.7.2"
 okhttp = "5.0.0-alpha.10"
+newpipeExtractor = "v0.26.5"
 
 room = "2.6.1"
 ksp = "2.0.20-1.0.25"
@@ -69,6 +70,8 @@ androidx-compose-material3-windowSizeClass = { group = "androidx.compose.materia
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphics" }
 
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+
+newpipe-extractor = { group = "com.github.TeamNewPipe", name = "NewPipeExtractor", version.ref = "newpipeExtractor" }
 
 androidx-compose-runtime = { group = "androidx.compose.runtime", name = "runtime" }
 androidx-compose-ui-test = { group = "androidx.compose.ui", name = "ui-test-junit4" }

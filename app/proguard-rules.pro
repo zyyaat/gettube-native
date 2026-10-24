@@ -66,3 +66,12 @@
 #-keepnames class <1>$$serializer { # -keepnames suffices; class is kept when serializer() is kept.
 #    static <1>$$serializer INSTANCE;
 #}
+# GetTube: NewPipeExtractor (native InnerTube fast path) + its stack
+-keep class org.schabi.newpipe.** { *; }
+-dontwarn org.schabi.newpipe.**
+-keep class com.grack.nanojson.** { *; }
+-dontwarn com.grack.nanojson.**
+-keep class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.**
+-dontwarn javax.naming.**
+-dontwarn javax.script.**

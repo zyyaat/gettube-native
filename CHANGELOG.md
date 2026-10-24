@@ -2,6 +2,30 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.0] - build-12
+
+### Added — native InnerTube fast path (NewPipeExtractor)
+
+- The quality sheet now fetches video info natively through NewPipeExtractor
+  (the InnerTube client library used by the NewPipe app) instead of going
+  through a yt-dlp process: direct requests to YouTube's player API, no
+  Python process startup, and no QuickJS signature-challenge solving —
+  measured end-to-end at ~2-4s with the full quality list (video up to 4K
+  plus every audio quality, exact file sizes), versus 15-20s+ for on-device
+  yt-dlp extraction
+- The fetched info is mapped into a yt-dlp-compatible JSON, so the existing
+  download flow reuses it via --load-info-json and starts downloading
+  immediately (schema verified against both the engine-bundled yt-dlp
+  2025.11.12 and current stable 2026.10.21, including a real merged
+  144p+m4a download through the synthesized JSON)
+- Bulletproof fallbacks, in order: native InnerTube → pinned JS-less yt-dlp
+  clients (visionos/android_vr, build-11) → default yt-dlp clients. Live
+  streams, age-gated videos and extractor breakage automatically route to
+  yt-dlp, which handles cookies and authentication that the native path
+  does not
+- NewPipeDownloader implemented on OkHttp with timeouts; ProGuard keep
+  rules added for NewPipeExtractor, nanojson and Rhino (release minification)
+
 ## [1.3.6] - build-11
 
 ### Changed — quality analysis is now fast on the FIRST fetch too
