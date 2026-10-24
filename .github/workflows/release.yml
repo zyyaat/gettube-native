@@ -31,7 +31,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleGenericRelease --no-daemon --stacktrace
 
-      - name: Collect and rename APKs
+      - name: Collect and rename APKs (one file per ABI)
         run: |
           mkdir -p dist
           find app/build/outputs -type f -name '*.apk' | tee /tmp/apks.txt
@@ -39,9 +39,11 @@ jobs:
             low=$(basename "$f" | tr 'A-Z' 'a-z')
             base=$(basename "$f")
             case "$low" in
-              *universal*)    cp "$f" "dist/GetTube-universal-r${GITHUB_RUN_NUMBER}.apk" ;;
               *arm64-v8a*)    cp "$f" "dist/GetTube-arm64-r${GITHUB_RUN_NUMBER}.apk" ;;
               *armeabi-v7a*)  cp "$f" "dist/GetTube-arm32-r${GITHUB_RUN_NUMBER}.apk" ;;
+              *x86_64*)       cp "$f" "dist/GetTube-x86_64-r${GITHUB_RUN_NUMBER}.apk" ;;
+              *x86*)          cp "$f" "dist/GetTube-x86-r${GITHUB_RUN_NUMBER}.apk" ;;
+              *universal*)    echo "skip universal ($base) — per-ABI export only" ;;
               *) echo "skip $base" ;;
             esac
           done < /tmp/apks.txt
@@ -51,17 +53,22 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
-          name: GetTube build ${{ github.run_number }}
+          name: GetTube ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
           files: dist/*.apk
           body: |
-            🚀 **GetTube build ${{ github.run_number }}** — محرك yt-dlp كامل (مبني على Seal)
+            🚀 **GetTube ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}** — محرك yt-dlp كامل (مبني على Seal)
 
-            - الملف الموصى به: `GetTube-universal-r*.apk` — يعمل على أي جهاز
-            - أو `GetTube-arm64-r*.apk` للموبايلات الحديثة (أصغر حجماً)
+            📦 **كل معمارية في ملف منفصل** — اختار الملف المناسب لجهازك:
+            - `GetTube-arm64-r*.apk` — الموبايلات الحديثة (الأغلبية — موصى به) ✅
+            - `GetTube-arm32-r*.apk` — الموبايلات والأجهزة القديمة (معالج 32-bit)
+            - `GetTube-x86_64-r*.apk` — المحاكيات وأجهزة Intel 64-bit
+            - `GetTube-x86-r*.apk` — أجهزة Intel 32-bit نادرة
+
+            - كل ملف حجمه ~40MB بدل ملف واحد كبير — توفير في التنزيل واستهلاك النت
             - جودات من 144p حتى 8K + تحويل MP3 + تحميل قوائم التشغيل كاملة
             - محرك yt-dlp يتحدث باستمرار لتجاوز حجب يوتيوب — ويمكن تحديثه من داخل التطبيق (الإعدادات ← yt-dlp)
 
-            > حمّل ملف APK من قسم Assets تحت 👇
+            > حمّل ملف APK واحد فقط من قسم Assets تحت 👇
           make_latest: true
 
       - name: Upload artifact (7 days retention)

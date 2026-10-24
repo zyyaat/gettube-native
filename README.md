@@ -28,15 +28,18 @@
 
 | الملف | مناسب لـ |
 |-------|----------|
-| `GetTube-universal-*.apk` | أي جهاز (موصى به) |
-| `GetTube-arm64-*.apk` | الموبايلات الحديثة (أصغر حجماً) |
+| `GetTube-arm64-*.apk` | الموبايلات الحديثة (الأغلبية — موصى به) |
 | `GetTube-arm32-*.apk` | الأجهزة القديمة 32-bit |
+| `GetTube-x86_64-*.apk` | المحاكيات وأجهزة Intel 64-bit |
+| `GetTube-x86-*.apk` | أجهزة Intel 32-bit نادرة |
+
+> كل ملف معمارية واحدة فقط (~40MB) — حمّل اللي يناسب جهازك بدل ملف واحد كبير 138MB.
 
 ## 🛠️ البناء من المصدر / Build from source
 
 ```bash
 # يتطلب: JDK 21 + Android SDK
-./gradlew buildGenericRelease
+./gradlew assembleGenericRelease
 # المخرجات: app/build/outputs/apk/generic/release/
 ```
 

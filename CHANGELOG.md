@@ -2,6 +2,18 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.2.1] - build-4
+
+### Changed — lighter downloads (per-ABI export)
+- Release APKs are now split strictly per architecture: **no more 138 MB
+  universal file** — every APK carries only its own device's native
+  libraries (~40 MB each)
+- The release page now lists one separate file per ABI: `arm64-v8a` (modern
+  phones), `armeabi-v7a` (32-bit devices), `x86_64` and `x86` (emulators and
+  Intel devices — newly included as separate files)
+- Release notes and the README download table updated to guide users to the
+  right file for their device
+
 ## [1.2.0] - build-3
 
 ### Added — "نفس التطبيق القديم" UI identity

@@ -59,7 +59,9 @@ android {
                     isEnable = true
                     reset()
                     include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-                    isUniversalApk = true
+                    // Per-ABI export only: each APK carries its own device's
+                    // native libraries (no 138 MB universal file)
+                    isUniversalApk = false
                 }
             }
         } else {
