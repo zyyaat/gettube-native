@@ -245,8 +245,7 @@ fun DownloadPageV2(
             }
         }
     }
-
-
+}
 
 @Composable
 private operator fun PaddingValues.plus(other: PaddingValues): PaddingValues {
