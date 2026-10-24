@@ -275,7 +275,7 @@ object DownloadUtil {
                 }
             return getVideoInfo(request, taskKey).onSuccess { (info, rawJson) ->
                 cacheVideoInfo(url, playlistIndex, info, rawJson)
-            }
+            }.map { it.first }
         }
     }
 
