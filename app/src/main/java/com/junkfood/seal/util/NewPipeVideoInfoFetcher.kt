@@ -289,16 +289,17 @@ object NewPipeVideoInfoFetcher {
         val subtitleMap =
             runCatching {
                 extractor.getSubtitles(MediaFormat.VTT)
-                    .groupBy(
-                        { it.languageTag },
-                        { stream ->
+                    .mapNotNull { stream ->
+                        val subUrl = stream.content ?: stream.url
+                        if (subUrl.isNullOrEmpty()) return@mapNotNull null
+                        stream.languageTag to
                             SubtitleFormat(
                                 ext = stream.extension,
-                                url = stream.content ?: stream.url,
+                                url = subUrl,
                                 name = stream.displayLanguageName,
                             )
-                        },
-                    )
+                    }
+                    .groupBy({ it.first }, { it.second })
             }.getOrDefault(emptyMap())
 
         val chapters =
