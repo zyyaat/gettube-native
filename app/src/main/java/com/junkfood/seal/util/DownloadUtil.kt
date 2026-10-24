@@ -137,6 +137,18 @@ object DownloadUtil {
         addOption("--cache-dir", ytdlpCacheDir.absolutePath)
     }
 
+    // GetTube: pin JS-less YouTube player clients so a fetch never enters the
+    // QuickJS signature-challenge path — benchmarked as the dominant cost of
+    // every on-device extraction (10-20s+ even with a warm cache). visionos
+    // is the JS-less default of current yt-dlp releases (47-49 formats incl.
+    // 4K in ~2-4s); on the engine-bundled 2025.11.12 it is unsupported and
+    // skipped, and android_vr serves the same role there (31 formats, full
+    // 4K). yt-dlp silently drops unsupported pins, so this chain is safe
+    // across engine and yt-dlp upgrades.
+    private fun YoutubeDLRequest.pinFastYoutubeClients() {
+        addOption("--extractor-args", "youtube:player_client=visionos,android_vr")
+    }
+
     const val BASENAME = "%(title).200B"
 
     const val EXTENSION = ".%(ext)s"
@@ -244,7 +256,7 @@ object DownloadUtil {
         // instead of spawning yt-dlp twice for the same video.
         getCachedVideoInfo(url, playlistIndex)?.let { return Result.success(it) }
         with(preferences) {
-            val request =
+            fun buildRequest(pinClients: Boolean): YoutubeDLRequest =
                 YoutubeDLRequest(url).apply {
                     addOption("-o", BASENAME)
                     if (restrictFilenames) {
@@ -281,15 +293,33 @@ object DownloadUtil {
                     // GetTube: the player response alone carries every field the
                     // quality sheet needs; skipping the watch-page HTML and the tv
                     // client config shaves 1-2s of sequential round-trips per fetch.
+                    if (pinClients) pinFastYoutubeClients()
                     addOption("--extractor-args", "youtube:player_skip=webpage,configs")
                     enablePersistentYtDlpCache()
                     addOption("-R", "1")
                     addOption("--no-playlist")
                     addOption("--socket-timeout", "5")
                 }
-            return getVideoInfo(request, taskKey).onSuccess { (info, rawJson) ->
-                cacheVideoInfo(url, playlistIndex, info, rawJson)
-            }.map { it.first }
+
+            // GetTube build-11: run the fetch on JS-less YouTube clients first —
+            // no player JS download and no QuickJS signature-challenge solving
+            // at all, which benchmarks as the bulk of the on-device wait.
+            // If the pinned run fails or returns no formats (e.g. YouTube
+            // breakage), fall back to yt-dlp's default client chain — slower
+            // on-device, but the battle-tested behavior everything else
+            // already assumes.
+            getVideoInfo(buildRequest(pinClients = true), taskKey)
+                .getOrNull()
+                ?.takeIf { !it.first.formats.isNullOrEmpty() }
+                ?.let { (info, rawJson) ->
+                    cacheVideoInfo(url, playlistIndex, info, rawJson)
+                    return Result.success(info)
+                }
+            return getVideoInfo(buildRequest(pinClients = false), taskKey)
+                .onSuccess { (info, rawJson) ->
+                    cacheVideoInfo(url, playlistIndex, info, rawJson)
+                }
+                .map { it.first }
         }
     }
 
@@ -809,7 +839,10 @@ object DownloadUtil {
                         addOption("--load-info-json", cachedInfoJson.absolutePath)
                     } else {
                         // No reusable JSON: this run extracts on its own, so skip
-                        // the same round-trips the sheet fetch skips as well.
+                        // the same round-trips the sheet fetch skips as well, and
+                        // pin the same JS-less clients to stay out of the QuickJS
+                        // signature-challenge path (playlists re-extract per entry).
+                        pinFastYoutubeClients()
                         addOption("--extractor-args", "youtube:player_skip=webpage,configs")
                     }
                     //                addOption("-v")

@@ -2,6 +2,32 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.3.6] - build-11
+
+### Changed — quality analysis is now fast on the FIRST fetch too
+
+- build-10's cache only helped repeat fetches; the first fetch (and any fetch
+  after the player JS changed) still paid the full JS challenge cost. Real
+  benchmarking (same yt-dlp versions the app ships/auto-updates to,
+  2025.11.12 and 2026.10.21) shows the dominant cost is not the network — it
+  is yt-dlp's default client chain: it starts with `tv`/`tv_samsung`, whose
+  formats require solving YouTube's obfuscated signature challenges in an
+  embedded JavaScript engine (QuickJS on the phone), then falls through more
+  clients sequentially
+- Info fetches now pin JS-less YouTube clients first:
+  `--extractor-args "youtube:player_client=visionos,android_vr"`. visionos is
+  the JS-less default of current yt-dlp releases; android_vr plays the same
+  role on the engine-bundled 2025.11.12 (unsupported pins are skipped
+  silently, so the chain survives yt-dlp upgrades). No player JS download,
+  no QuickJS solving — measured at ~2-4s with the full format list (31-49
+  formats incl. 4K, every format carrying a working URL)
+- The quality-sheet fetch falls back automatically to the default client
+  chain if the pinned run fails or returns no formats, so nothing regresses
+  if YouTube breaks one of these clients
+- Fallback extraction at download time (playlists, retries, stale cached
+  JSON) pins the same JS-less clients — playlist entries no longer pay the
+  challenge cost per video
+
 ## [1.3.5] - build-10
 
 ### Changed — much faster repeat info fetching
