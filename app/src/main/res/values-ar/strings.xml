@@ -472,4 +472,11 @@
     <string name="original_audio">الصوت الأصلي</string>
     <string name="all_formats">كل الصيغ</string>
     <string name="audio_options">خيارات الصوت</string>
+    <string name="quality_sheet_meta">%1$d اختر الجودة • مجاني ✦ بدون إعلانات</string>
+    <string name="quality_auto_mux_note">يتم دمج الفيديو والصوت تلقائياً بعد التنزيل</string>
+    <string name="quality_section_high">جودات عالية — دمج تلقائي</string>
+    <string name="quality_section_ready">فيديو + صوت (جاهز فوراً)</string>
+    <string name="quality_section_audio">الصوت فقط</string>
+    <string name="quality_best_badge">الأفضل</string>
+    <string name="download_with_label">تنزيل — %1$s</string>
 </resources>

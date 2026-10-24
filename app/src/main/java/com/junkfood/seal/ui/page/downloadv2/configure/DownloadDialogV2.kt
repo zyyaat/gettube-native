@@ -14,9 +14,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,11 +35,15 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.ModalBottomSheetValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.MergeType
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material.icons.filled.VideoFile
@@ -46,6 +53,11 @@ import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.FlashOn
+import androidx.compose.material.icons.outlined.HighQuality
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NewLabel
@@ -53,6 +65,8 @@ import androidx.compose.material.icons.outlined.SettingsSuggest
 import androidx.compose.material.icons.outlined.VideoFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -83,16 +97,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.junkfood.seal.App
@@ -137,6 +154,7 @@ import com.junkfood.seal.util.DownloadType.Playlist
 import com.junkfood.seal.util.DownloadType.Video
 import com.junkfood.seal.util.DownloadType.entries
 import com.junkfood.seal.util.DownloadUtil
+import com.junkfood.seal.util.Format
 import com.junkfood.seal.util.FORMAT_SELECTION
 import com.junkfood.seal.util.PreferenceStrings
 import com.junkfood.seal.util.PreferenceUtil
@@ -152,6 +170,7 @@ import com.junkfood.seal.util.VideoInfo
 import com.junkfood.seal.util.VIDEO_FORMAT
 import com.junkfood.seal.util.VIDEO_QUALITY
 import com.yausername.youtubedl_android.YoutubeDL
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -533,70 +552,182 @@ private sealed interface SheetInfoState {
     data object Failed : SheetInfoState
 }
 
-private fun VideoInfo.availableVideoHeights(): List<Int> =
-    formats.orEmpty()
-        .filter { it.containsVideo() && it.height != null && it.height!! > 0 }
-        .map { it.height!!.toInt() }
-        .distinct()
-        .sortedDescending()
+private enum class SheetQualityKind { HIGH, READY, AUDIO }
 
-private fun heightToResIndex(height: Int): Int =
-    when {
-        height >= 2160 -> 1
-        height >= 1440 -> 2
-        height >= 1080 -> 3
-        height >= 720 -> 4
-        height >= 480 -> 5
-        height >= 360 -> 6
-        else -> 7
+private data class SheetQualityOption(
+    val kind: SheetQualityKind,
+    val label: String,
+    val containerLabel: String,
+    val sizeBytes: Long,
+    val dash: Boolean,
+    val audio: Boolean,
+    val formatExpr: String,
+    val recommended: Boolean = false,
+    val mp3: Boolean = false,
+)
+
+private fun prettyVideoCodec(raw: String?): String {
+    val codec = (raw ?: "").lowercase()
+    return when {
+        codec.startsWith("avc1") || codec.startsWith("h264") -> "H264"
+        codec.startsWith("vp09") || codec.startsWith("vp9") -> "VP9"
+        codec.startsWith("av01") || codec.startsWith("av1") -> "AV1"
+        codec.startsWith("vp8") -> "VP8"
+        codec.startsWith("h263") -> "H263"
+        codec.startsWith("mp4v") -> "MPEG4"
+        else -> (raw ?: "video").uppercase()
     }
-
-private fun heightLabel(height: Int): String {
-    val tag =
-        when (height) {
-            2160 -> "4K"
-            1440 -> "2K"
-            1080 -> "FHD"
-            720 -> "HD"
-            else -> ""
-        }
-    return if (tag.isEmpty()) "${height}p" else "${height}p $tag"
 }
 
-@Composable
-private fun SheetVideoHeader(info: VideoInfo) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AsyncImage(
-            model = info.thumbnail,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier =
-                Modifier.width(120.dp)
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(8.dp)),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = info.title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            info.channel?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+private fun Format.sizeEstimate(durationSeconds: Double?): Long {
+    fileSize?.let { return it.toLong() }
+    fileSizeApprox?.let { return it.toLong() }
+    val bitrate = tbr ?: vbr ?: abr ?: return 0L
+    val seconds = durationSeconds ?: 0.0
+    return (bitrate * 1000f / 8f * seconds).toLong()
+}
+
+private fun videoQualityLabel(height: Int, fps: Int): String {
+    var label = "${height}p"
+    if (fps >= 50) label += if (fps >= 60) "60" else fps.toString()
+    if (height == 2160) label += " • 4K"
+    if (height == 4320) label += " • 8K"
+    return label
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024 && unit < units.size - 1) {
+        value /= 1024
+        unit++
     }
+    val text =
+        if (unit == 0 || value >= 100) value.roundToInt().toString()
+        else String.format(java.util.Locale.US, "%.1f", value)
+    return "$text ${units[unit]}"
+}
+
+// Builds the classic GetTube quality list from the video's real formats:
+// high-quality video-only rows (auto muxed), instant muxed rows and audio
+// rows — mirroring the original Flutter app's QualitySheet.
+private fun VideoInfo.buildSheetOptions(): List<SheetQualityOption> {
+    val all = formats.orEmpty()
+    val durationSeconds = duration
+    val audioStreams = all.filter { it.containsAudio() && !it.containsVideo() }
+    val bestAac =
+        audioStreams
+            .filter { (it.acodec ?: "").startsWith("mp4a") }
+            .maxByOrNull { it.abr ?: it.tbr ?: 0.0 }
+    val bestOpus =
+        audioStreams
+            .filter { (it.acodec ?: "").startsWith("opus") }
+            .maxByOrNull { it.abr ?: it.tbr ?: 0.0 }
+    val pairBytes = (bestAac ?: bestOpus)?.sizeEstimate(durationSeconds) ?: 0L
+
+    val options = mutableListOf<SheetQualityOption>()
+
+    all.filter { it.containsVideo() && !it.containsAudio() }
+        .groupBy {
+            Triple(it.height?.toInt() ?: 0, prettyVideoCodec(it.vcodec), it.fps?.toInt() ?: 0)
+        }
+        .map { group -> group.value.maxByOrNull { it.sizeEstimate(durationSeconds) }!! }
+        .sortedWith(
+            compareByDescending<Format> { it.height?.toInt() ?: 0 }
+                .thenByDescending { it.sizeEstimate(durationSeconds) })
+        .forEach { format ->
+            val height = format.height?.toInt() ?: 0
+            if (height <= 0) return@forEach
+            val codec = prettyVideoCodec(format.vcodec)
+            val expr =
+                when (codec) {
+                    "H264" ->
+                        "bv*[height<=$height][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=$height]+ba/b[height<=$height]"
+                    "VP9" ->
+                        "bv*[height<=$height][vcodec^=vp09]+ba/bv*[height<=$height]+ba/b[height<=$height]"
+                    "AV1" ->
+                        "bv*[height<=$height][vcodec^=av01]+ba/bv*[height<=$height]+ba/b[height<=$height]"
+                    else -> "bv*[height<=$height]+ba/b[height<=$height]"
+                }
+            options +=
+                SheetQualityOption(
+                    kind = SheetQualityKind.HIGH,
+                    label = videoQualityLabel(height, format.fps?.toInt() ?: 0),
+                    containerLabel = "${(format.ext ?: "mp4").uppercase()} ($codec)",
+                    sizeBytes = format.sizeEstimate(durationSeconds) + pairBytes,
+                    dash = true,
+                    audio = false,
+                    formatExpr = expr,
+                    recommended = codec == "H264" && height == 1080,
+                )
+        }
+
+    all.filter { it.containsVideo() && it.containsAudio() }
+        .groupBy {
+            Triple(it.height?.toInt() ?: 0, prettyVideoCodec(it.vcodec), it.fps?.toInt() ?: 0)
+        }
+        .map { group -> group.value.maxByOrNull { it.sizeEstimate(durationSeconds) }!! }
+        .sortedByDescending { it.height?.toInt() ?: 0 }
+        .forEach { format ->
+            val height = format.height?.toInt() ?: 0
+            if (height <= 0) return@forEach
+            options +=
+                SheetQualityOption(
+                    kind = SheetQualityKind.READY,
+                    label = videoQualityLabel(height, format.fps?.toInt() ?: 0),
+                    containerLabel =
+                        "${(format.ext ?: "mp4").uppercase()} (${prettyVideoCodec(format.vcodec)})",
+                    sizeBytes = format.sizeEstimate(durationSeconds),
+                    dash = false,
+                    audio = false,
+                    formatExpr = "b[height<=$height]/bv*[height<=$height]+ba",
+                )
+        }
+
+    bestAac?.let { stream ->
+        options +=
+            SheetQualityOption(
+                kind = SheetQualityKind.AUDIO,
+                label = "M4A ${(stream.abr ?: stream.tbr ?: 0.0).roundToInt()}kbps",
+                containerLabel = "M4A (AAC)",
+                sizeBytes = stream.sizeEstimate(durationSeconds),
+                dash = false,
+                audio = true,
+                formatExpr = "ba[acodec^=mp4a]/ba",
+            )
+    }
+    bestOpus?.let { stream ->
+        options +=
+            SheetQualityOption(
+                kind = SheetQualityKind.AUDIO,
+                label = "OPUS ${(stream.abr ?: stream.tbr ?: 0.0).roundToInt()}kbps",
+                containerLabel = "WEBM (Opus)",
+                sizeBytes = stream.sizeEstimate(durationSeconds),
+                dash = false,
+                audio = true,
+                formatExpr = "ba[acodec^=opus]/ba",
+            )
+    }
+    (bestAac ?: bestOpus)?.let { source ->
+        val seconds = durationSeconds ?: 0.0
+        options +=
+            SheetQualityOption(
+                kind = SheetQualityKind.AUDIO,
+                label = "MP3 192kbps",
+                containerLabel = "MP3",
+                sizeBytes =
+                    if (seconds > 0) (192000L / 8 * seconds).toLong()
+                    else source.sizeEstimate(durationSeconds),
+                dash = false,
+                audio = true,
+                formatExpr = "",
+                mp3 = true,
+            )
+    }
+
+    return options
 }
 
 @Composable
@@ -632,8 +763,6 @@ private fun ConfigurePage(
     // GetTube-style: fetch the video's real info so only qualities that actually
     // exist are offered. Falls back to the generic preset UI on failure.
     var infoState by remember(url) { mutableStateOf<SheetInfoState>(SheetInfoState.Loading) }
-    var selectedHeight by remember(url) { mutableStateOf<Int?>(null) }
-    var preferMp3 by remember(url) { mutableStateOf(true) }
 
     LaunchedEffect(url) {
         val result =
@@ -650,6 +779,49 @@ private fun ConfigurePage(
         onDispose { YoutubeDL.destroyProcessById(INFO_TASK_KEY) }
     }
 
+    // Classic GetTube quality sheet: one list with every quality the video
+    // actually offers (high / instant / audio), select-then-confirm.
+    val sheetOptions =
+        remember(infoState) {
+            (infoState as? SheetInfoState.Done)?.info?.buildSheetOptions().orEmpty()
+        }
+    val useClassicSheet =
+        infoState is SheetInfoState.Done &&
+            sheetOptions.isNotEmpty() &&
+            selectedType != Command &&
+            selectedType != Playlist
+
+    if (useClassicSheet) {
+        var selectedOption by remember(url) { mutableStateOf<SheetQualityOption?>(null) }
+        val fetchedInfo = (infoState as SheetInfoState.Done).info
+        ClassicQualitySheet(
+            info = fetchedInfo,
+            options = sheetOptions,
+            selected = selectedOption,
+            onSelect = { selectedOption = it },
+            onDownload = { option ->
+                onConfigSave(
+                    config.copy(
+                        useFormatSelection = false,
+                        downloadType = if (option.audio) Audio else Video,
+                    )
+                )
+                val base =
+                    preferences.copy(
+                        extractAudio = option.audio,
+                        formatIdString = if (option.mp3) "" else option.formatExpr,
+                    )
+                val prefs =
+                    if (option.mp3) base.copy(convertAudio = true, audioConvertFormat = CONVERT_MP3)
+                    else base
+                onActionPost(
+                    Action.DownloadWithPreset(urlList = listOf(url), preferences = prefs)
+                )
+            },
+        )
+        return
+    }
+
     Column {
         Column(modifier = modifier.padding(horizontal = 20.dp)) {
             Header(
@@ -657,10 +829,6 @@ private fun ConfigurePage(
                 title = stringResource(R.string.settings_before_download),
                 icon = Icons.Outlined.DoneAll,
             )
-            when (val fetched = infoState) {
-                is SheetInfoState.Done -> SheetVideoHeader(info = fetched.info)
-                else -> {}
-            }
             DrawerSheetSubtitle(text = stringResource(id = R.string.download_type))
             DownloadTypeSelectionGroup(
                 typeEntries = config.typeEntries,
@@ -689,78 +857,7 @@ private fun ConfigurePage(
                             onClick = { useFormatSelection = true },
                         )
                     } else {
-                        when (val fetched = infoState) {
-                            is SheetInfoState.Done -> {
-                                if (selectedType == Video) {
-                                    DrawerSheetSubtitle(
-                                        text =
-                                            stringResource(id = R.string.available_qualities),
-                                        modifier = Modifier,
-                                    )
-                                    val heights = fetched.info.availableVideoHeights()
-                                    if (heights.isEmpty()) {
-                                        Preset(
-                                            modifier = Modifier,
-                                            preference = preferences,
-                                            selected = !useFormatSelection,
-                                            downloadType = selectedType,
-                                            onClick = { useFormatSelection = false },
-                                            showEditIcon = !useFormatSelection,
-                                            onEdit = { onPresetEdit(selectedType) },
-                                        )
-                                    } else {
-                                        LazyRow {
-                                            items(heights) { height ->
-                                                VideoFilterChip(
-                                                    selected = selectedHeight == height,
-                                                    onClick = {
-                                                        selectedHeight = height
-                                                        useFormatSelection = false
-                                                    },
-                                                    label = heightLabel(height),
-                                                )
-                                            }
-                                            item {
-                                                VideoFilterChip(
-                                                    selected = useFormatSelection,
-                                                    onClick = { useFormatSelection = true },
-                                                    label = stringResource(R.string.all_formats),
-                                                )
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    DrawerSheetSubtitle(
-                                        text = stringResource(id = R.string.audio_options),
-                                        modifier = Modifier,
-                                    )
-                                    LazyRow {
-                                        item {
-                                            VideoFilterChip(
-                                                selected = preferMp3,
-                                                onClick = { preferMp3 = true },
-                                                label = stringResource(R.string.mp3_audio),
-                                            )
-                                        }
-                                        item {
-                                            VideoFilterChip(
-                                                selected = !preferMp3,
-                                                onClick = { preferMp3 = false },
-                                                label =
-                                                    stringResource(R.string.original_audio),
-                                            )
-                                        }
-                                        item {
-                                            VideoFilterChip(
-                                                selected = useFormatSelection,
-                                                onClick = { useFormatSelection = true },
-                                                label = stringResource(R.string.all_formats),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
+                        when (infoState) {
                             SheetInfoState.Loading -> {
                                 Row(
                                     modifier =
@@ -868,21 +965,7 @@ private fun ConfigurePage(
                         downloadType = selectedType,
                     )
                 )
-                val base = preferences.copy(extractAudio = selectedType == Audio)
-                val prefs =
-                    when {
-                        selectedType == Video && selectedHeight != null ->
-                            base.copy(videoResolution = heightToResIndex(selectedHeight!!))
-
-                        selectedType == Audio && infoState is SheetInfoState.Done ->
-                            base.copy(
-                                convertAudio = preferMp3,
-                                audioConvertFormat =
-                                    if (preferMp3) CONVERT_MP3 else base.audioConvertFormat,
-                            )
-
-                        else -> base
-                    }
+                val prefs = preferences.copy(extractAudio = selectedType == Audio)
                 onActionPost(
                     Action.DownloadWithPreset(urlList = listOf(url), preferences = prefs)
                 )
@@ -1414,6 +1497,220 @@ private fun ActionButtons(
                         action.Label()
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QualitySectionTitle(text: String, icon: ImageVector) {
+    Row(
+        modifier = Modifier.padding(top = 14.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun QualityOptionRow(
+    option: SheetQualityOption,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val highlight = selected || option.recommended
+    val titleColor = if (highlight) primary else MaterialTheme.colorScheme.onSurface
+    val badgeColor =
+        if (highlight || selected) primary else MaterialTheme.colorScheme.primaryContainer
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 2.dp else 0.dp),
+        border =
+            BorderStroke(
+                width = if (selected) 2.dp else 1.dp,
+                color =
+                    if (selected) primary
+                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+            ),
+    ) {
+        Row(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .clickable(onClick = onSelect)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier.size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (selected) primary else badgeColor.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector =
+                        if (option.audio) Icons.Outlined.MusicNote else Icons.Outlined.Videocam,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (selected) MaterialTheme.colorScheme.onPrimary else primary,
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = option.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = titleColor,
+                    )
+                    if (option.recommended) {
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier =
+                                Modifier.clip(RoundedCornerShape(999.dp))
+                                    .background(primary)
+                                    .padding(horizontal = 6.dp, vertical = 1.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.quality_best_badge),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text =
+                        "${option.containerLabel} • ${formatBytes(option.sizeBytes)}" +
+                            if (option.dash) " • DASH" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector =
+                    if (selected) Icons.Filled.CheckCircle
+                    else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = if (selected) primary else MaterialTheme.colorScheme.outline,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClassicQualitySheet(
+    info: VideoInfo,
+    options: List<SheetQualityOption>,
+    selected: SheetQualityOption?,
+    onSelect: (SheetQualityOption) -> Unit,
+    onDownload: (SheetQualityOption) -> Unit,
+) {
+    val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * 0.85f
+
+    Column(modifier = Modifier.fillMaxWidth().heightIn(max = maxSheetHeight)) {
+        Column(
+            modifier =
+                Modifier.weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+        ) {
+            Text(
+                text = info.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(R.string.quality_sheet_meta, options.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (options.any { it.kind == SheetQualityKind.HIGH }) {
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.MergeType,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = stringResource(R.string.quality_auto_mux_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+
+            listOf(
+                    SheetQualityKind.HIGH to R.string.quality_section_high,
+                    SheetQualityKind.READY to R.string.quality_section_ready,
+                    SheetQualityKind.AUDIO to R.string.quality_section_audio,
+                )
+                .forEach { (kind, titleRes) ->
+                    val group = options.filter { it.kind == kind }
+                    if (group.isNotEmpty()) {
+                        QualitySectionTitle(
+                            text = stringResource(titleRes),
+                            icon =
+                                when (kind) {
+                                    SheetQualityKind.HIGH -> Icons.Outlined.HighQuality
+                                    SheetQualityKind.READY -> Icons.Outlined.FlashOn
+                                    SheetQualityKind.AUDIO -> Icons.Outlined.MusicNote
+                                },
+                        )
+                        group.forEach { option ->
+                            QualityOptionRow(
+                                option = option,
+                                selected = selected == option,
+                                onSelect = { onSelect(option) },
+                            )
+                        }
+                    }
+                }
+            Spacer(Modifier.height(4.dp))
+        }
+        Box(modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 16.dp)) {
+            Button(
+                onClick = { selected?.let(onDownload) },
+                enabled = selected != null,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Download,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text =
+                        if (selected == null) stringResource(R.string.download)
+                        else stringResource(R.string.download_with_label, selected.label),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }

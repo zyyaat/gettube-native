@@ -2,6 +2,24 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.3.0] - build-5
+
+### Changed — classic GetTube quality sheet
+- The quality selection screen is rebuilt to match the original GetTube
+  Flutter app exactly: bold title header with the "N Choose quality • Free ✦
+  Zero ads" meta line, then three sections — **High quality (auto muxed)**,
+  **Video + audio (instant)** and **Audio only**
+- Every row is a bordered card with a circular camera/music icon, the exact
+  container + codec ("MP4 (H264)"), an estimated size and a DASH marker for
+  merged rows — same look as the old `_OptionTile` cards
+- **Select-then-confirm flow**: tapping a row only selects it (violet border
+  + check mark); the full-width download button at the bottom stays dimmed
+  until a quality is chosen, then reads "Download — 1080p60"
+- Each row now maps to a precise yt-dlp format expression (codec-aware:
+  avc1/vp09/av01 with height caps) instead of the coarse resolution presets
+- The recommended "Best" badge marks the highest H264 1080p row, identical
+  to the old app's rule
+
 ## [1.2.1] - build-4
 
 ### Changed — lighter downloads (per-ABI export)

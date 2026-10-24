@@ -471,4 +471,11 @@
     <string name="original_audio">Original audio</string>
     <string name="all_formats">All formats</string>
     <string name="audio_options">Audio options</string>
+    <string name="quality_sheet_meta">%1$d Choose quality • Free ✦ Zero ads</string>
+    <string name="quality_auto_mux_note">Video and audio are merged automatically after download</string>
+    <string name="quality_section_high">High quality — auto muxed</string>
+    <string name="quality_section_ready">Video + audio (instant)</string>
+    <string name="quality_section_audio">Audio only</string>
+    <string name="quality_best_badge">Best</string>
+    <string name="download_with_label">Download — %1$s</string>
 </resources>
