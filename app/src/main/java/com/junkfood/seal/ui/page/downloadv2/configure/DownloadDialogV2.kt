@@ -858,7 +858,7 @@ private fun ConfigurePage(
                         )
                     } else {
                         when (infoState) {
-                            SheetInfoState.Done -> {}
+                            is SheetInfoState.Done -> {}
                             SheetInfoState.Loading -> {
                                 Row(
                                     modifier =
