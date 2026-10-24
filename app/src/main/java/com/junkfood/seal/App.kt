@@ -88,6 +88,7 @@ class App : Application() {
 
         applicationScope.launch((Dispatchers.IO)) {
             try {
+                resetYtDlpToBundledVersionIfNeeded()
                 YoutubeDL.init(this@App)
                 FFmpeg.init(this@App)
                 Aria2c.init(this@App)
@@ -111,6 +112,27 @@ class App : Application() {
         Thread.setDefaultUncaughtExceptionHandler { _, e -> startCrashReportActivity(e) }
     }
 
+    /**
+     * youtubedl-android only extracts its bundled yt-dlp when the target binary is
+     * missing, so an installation that still carries an older extraction — or one
+     * auto-updated to an incompatible build — would keep running it forever, while
+     * the upgraded engine starts passing `--js-runtimes` (QuickJS) on every call,
+     * which pre-2025.11 yt-dlp binaries reject with "no such option". Whenever the
+     * yt-dlp version bundled with this build changes, the extracted copy is reset
+     * exactly once so the bundled yt-dlp and the bundled QuickJS runtime always
+     * start out as a known-good pair.
+     */
+    private fun resetYtDlpToBundledVersionIfNeeded() {
+        runCatching {
+            val prefs = getSharedPreferences("yt_dlp_bundled_state", Context.MODE_PRIVATE)
+            if (prefs.getString(BUNDLED_YT_DLP_VERSION, null) != BUNDLED_YT_DLP_VERSION) {
+                File(noBackupFilesDir, YoutubeDL.baseName + "/" + YoutubeDL.ytdlpDirName)
+                    .deleteRecursively()
+                prefs.edit().putString(BUNDLED_YT_DLP_VERSION, BUNDLED_YT_DLP_VERSION).apply()
+            }
+        }.onFailure { it.printStackTrace() }
+    }
+
     private fun startCrashReportActivity(th: Throwable) {
         th.printStackTrace()
         startActivity(
@@ -124,6 +146,8 @@ class App : Application() {
     }
 
     companion object {
+        private const val BUNDLED_YT_DLP_VERSION = "2025.11.12"
+
         lateinit var clipboard: ClipboardManager
         lateinit var videoDownloadDir: String
         lateinit var audioDownloadDir: String

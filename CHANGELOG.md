@@ -2,6 +2,26 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.3.4] - build-9
+
+### Fixed — "No supported JavaScript runtime" breaking video info fetching
+- yt-dlp 2025.11+ resolves YouTube's JavaScript challenges through an external
+  JS runtime; without one, fetching video info fails with "No supported
+  JavaScript runtime could be found. Only deno is enabled by default…" — and
+  our engine (youtubedl-android 0.17.3) shipped with no runtime at all, while
+  its auto-updater kept pulling yt-dlp nightly builds that demand one
+- Upgraded the engine to youtubedl-android 0.18.1: it now bundles the QuickJS
+  runtime (libqjs.so, all four ABIs) next to yt-dlp 2025.11.12 and wires them
+  together automatically (`--js-runtimes quickjs:…`) on every call — no app
+  code changes needed, the API is identical
+- The extracted yt-dlp is now reset once per app update to the bundled
+  known-good version: the engine never re-extracts while the binary exists, so
+  an older extraction would keep rejecting the new runtime flag with
+  "no such option" and break every download
+- The built-in yt-dlp auto-updater now follows the stable channel instead of
+  nightly — nightly builds are exactly what pulled in the JS-runtime
+  requirement and broke fetching between app releases
+
 ## [1.3.3] - build-8
 
 ### Changed — faster info fetching & instant download start
