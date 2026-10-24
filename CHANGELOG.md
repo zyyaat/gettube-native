@@ -2,6 +2,19 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.3.2] - build-7
+
+### Fixed — video info fetched twice
+- Picking a quality then starting the download used to spawn yt-dlp twice for
+  the same video: once when the quality sheet analyzed the available formats
+  (`yt-dlp -J`) and a second time inside the download engine before the actual
+  download started — doubling the wait on slow connections
+- A small in-memory cache (24 videos, 10-minute freshness) now reuses the
+  sheet's fetch inside the download engine, so downloads start right after the
+  quality is confirmed and the queue card no longer lingers on "Fetching info"
+- Every other info path (retry, the "all formats" page, pasted links) reuses
+  the same cache automatically
+
 ## [1.3.1] - build-6
 
 ### Removed — legacy "Adjust settings" dialog

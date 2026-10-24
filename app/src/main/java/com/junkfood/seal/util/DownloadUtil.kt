@@ -61,6 +61,36 @@ object DownloadUtil {
 
     const val SEARCH_PROCESS_ID = "ytsearch"
 
+    // GetTube: the quality sheet fetches the video's full info (yt-dlp -J)
+    // before the user picks a quality; keep the freshest results around so the
+    // download engine reuses them instead of fetching the same JSON twice.
+    private const val INFO_CACHE_LIMIT = 24
+    private const val INFO_CACHE_TTL_MS = 10 * 60 * 1000L
+
+    private val infoCacheLock = Any()
+    private val infoCache =
+        object : LinkedHashMap<String, Pair<Long, VideoInfo>>(16, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, Pair<Long, VideoInfo>>
+            ): Boolean = size > INFO_CACHE_LIMIT
+        }
+
+    private fun infoCacheKey(url: String, playlistIndex: Int?): String =
+        "$playlistIndex::$url"
+
+    private fun getCachedVideoInfo(url: String, playlistIndex: Int?): VideoInfo? =
+        synchronized(infoCacheLock) {
+            infoCache[infoCacheKey(url, playlistIndex)]
+                ?.takeIf { System.currentTimeMillis() - it.first < INFO_CACHE_TTL_MS }
+                ?.second
+        }
+
+    private fun cacheVideoInfo(url: String, playlistIndex: Int?, info: VideoInfo) {
+        synchronized(infoCacheLock) {
+            infoCache[infoCacheKey(url, playlistIndex)] = System.currentTimeMillis() to info
+        }
+    }
+
     const val BASENAME = "%(title).200B"
 
     const val EXTENSION = ".%(ext)s"
@@ -163,6 +193,9 @@ object DownloadUtil {
         taskKey: String? = null,
         preferences: DownloadPreferences = DownloadPreferences.createFromPreferences(),
     ): Result<VideoInfo> {
+        // Reuse a fresh info fetch (e.g. the one made by the quality sheet)
+        // instead of spawning yt-dlp twice for the same video.
+        getCachedVideoInfo(url, playlistIndex)?.let { return Result.success(it) }
         with(preferences) {
             val request =
                 YoutubeDLRequest(url).apply {
@@ -202,7 +235,7 @@ object DownloadUtil {
                     addOption("--no-playlist")
                     addOption("--socket-timeout", "5")
                 }
-            return getVideoInfo(request, taskKey)
+            return getVideoInfo(request, taskKey).onSuccess { cacheVideoInfo(url, playlistIndex, it) }
         }
     }
 
