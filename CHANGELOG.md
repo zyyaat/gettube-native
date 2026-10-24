@@ -2,6 +2,23 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.3.5] - build-10
+
+### Changed — much faster repeat info fetching
+- yt-dlp re-downloads YouTube's player JavaScript and re-solves its signature
+  challenges on every single call unless caching is on — the engine injects
+  --no-cache-dir into any request without a cache directory. That re-download
+  plus re-solving is the bulk of the "Analyzing available qualities…" wait,
+  especially on mobile data
+- All engine calls (quality-sheet fetch, downloads, playlist info) now share
+  one persistent cache directory: the player JS, the solved signature
+  functions and the challenge-solver scripts are fetched once and reused, so
+  the info fetch drops from ~15-20s to a few seconds on every run after the
+  first one (the first run still pays the one-time download)
+- Fallback extraction at download time (playlists, retries, stale cached JSON)
+  now skips the same watch-page and client-config round-trips the quality
+  sheet already skips
+
 ## [1.3.4] - build-9
 
 ### Fixed — "No supported JavaScript runtime" breaking video info fetching

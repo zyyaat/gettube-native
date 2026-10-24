@@ -125,6 +125,18 @@ object DownloadUtil {
         }.getOrNull()
     }
 
+    // GetTube: yt-dlp re-downloads YouTube's player JavaScript and re-solves its
+    // signature challenges on every single run unless caching is enabled — the
+    // engine injects --no-cache-dir into any request that lacks --cache-dir.
+    // Sharing one persistent cache dir across calls keeps the player JS, the
+    // solved signature functions and the challenge-solver scripts on disk, so
+    // the 15-20s first info fetch drops to a few seconds on every later run.
+    private fun YoutubeDLRequest.enablePersistentYtDlpCache() {
+        val ytdlpCacheDir =
+            File(context.cacheDir, "ytdlp-cache").apply { if (!exists()) mkdirs() }
+        addOption("--cache-dir", ytdlpCacheDir.absolutePath)
+    }
+
     const val BASENAME = "%(title).200B"
 
     const val EXTENSION = ".%(ext)s"
@@ -164,6 +176,7 @@ object DownloadUtil {
                 addOption("-o", BASENAME)
                 addOption("-R", "1")
                 addOption("--socket-timeout", "5")
+                enablePersistentYtDlpCache()
                 downloadPreferences.run {
                     if (extractAudio) {
                         addOption("-x")
@@ -269,6 +282,7 @@ object DownloadUtil {
                     // quality sheet needs; skipping the watch-page HTML and the tv
                     // client config shaves 1-2s of sequential round-trips per fetch.
                     addOption("--extractor-args", "youtube:player_skip=webpage,configs")
+                    enablePersistentYtDlpCache()
                     addOption("-R", "1")
                     addOption("--no-playlist")
                     addOption("--socket-timeout", "5")
@@ -787,8 +801,16 @@ object DownloadUtil {
             request
                 .apply {
                     addOption("--no-mtime")
+                    // Same caching rationale as the quality-sheet fetch: keep the
+                    // player JS and signature functions on disk for the extraction
+                    // runs that do happen here (playlists, retries, stale JSON).
+                    enablePersistentYtDlpCache()
                     if (cachedInfoJson != null) {
                         addOption("--load-info-json", cachedInfoJson.absolutePath)
+                    } else {
+                        // No reusable JSON: this run extracts on its own, so skip
+                        // the same round-trips the sheet fetch skips as well.
+                        addOption("--extractor-args", "youtube:player_skip=webpage,configs")
                     }
                     //                addOption("-v")
                     if (cookies) {
