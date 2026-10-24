@@ -36,9 +36,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.GridView
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.rounded.DownloadForOffline
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingActionButton
@@ -108,16 +108,11 @@ import com.junkfood.seal.ui.component.SelectionGroupDefaults
 import com.junkfood.seal.ui.component.SelectionGroupItem
 import com.junkfood.seal.ui.component.SelectionGroupRow
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel.Action
-import com.junkfood.seal.ui.page.downloadv2.configure.Config
-import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialog
 import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel
-import com.junkfood.seal.ui.page.downloadv2.configure.FormatPage
-import com.junkfood.seal.ui.page.downloadv2.configure.PlaylistSelectionPage
 import com.junkfood.seal.ui.page.downloadv2.configure.PreferencesMock
 import com.junkfood.seal.ui.svg.DynamicColorImageVectors
 import com.junkfood.seal.ui.svg.drawablevectors.download
 import com.junkfood.seal.ui.theme.SealTheme
-import com.junkfood.seal.util.DownloadUtil
 import com.junkfood.seal.util.FileUtil
 import com.junkfood.seal.util.getErrorReport
 import com.junkfood.seal.util.makeToast
@@ -197,7 +192,6 @@ sealed interface UiAction {
 @Composable
 fun DownloadPageV2(
     modifier: Modifier = Modifier,
-    onMenuOpen: (() -> Unit) = {},
     onSearchOpen: (() -> Unit) = {},
     dialogViewModel: DownloadDialogViewModel,
     downloader: DownloaderV2 = koinInject(),
@@ -215,7 +209,6 @@ fun DownloadPageV2(
             view.slightHapticFeedback()
             dialogViewModel.postAction(Action.ShowSheet())
         },
-        onMenuOpen = onMenuOpen,
         onSearchOpen = onSearchOpen,
     ) { task, action ->
         view.slightHapticFeedback()
@@ -253,53 +246,7 @@ fun DownloadPageV2(
         }
     }
 
-    var preferences by remember {
-        mutableStateOf(DownloadUtil.DownloadPreferences.createFromPreferences())
-    }
-    val sheetValue by dialogViewModel.sheetValueFlow.collectAsStateWithLifecycle()
-    val state by dialogViewModel.sheetStateFlow.collectAsStateWithLifecycle()
 
-    val selectionState = dialogViewModel.selectionStateFlow.collectAsStateWithLifecycle().value
-
-    var showDialog by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    LaunchedEffect(sheetValue) {
-        if (sheetValue == DownloadDialogViewModel.SheetValue.Expanded) {
-            showDialog = true
-        } else {
-            launch { sheetState.hide() }.invokeOnCompletion { showDialog = false }
-        }
-    }
-
-    if (showDialog) {
-
-        DownloadDialog(
-            state = state,
-            sheetState = sheetState,
-            config = Config(),
-            preferences = preferences,
-            onPreferencesUpdate = { preferences = it },
-            onActionPost = { dialogViewModel.postAction(it) },
-        )
-    }
-    when (selectionState) {
-        is DownloadDialogViewModel.SelectionState.FormatSelection ->
-            FormatPage(
-                state = selectionState,
-                onDismissRequest = { dialogViewModel.postAction(Action.Reset) },
-            )
-
-        is DownloadDialogViewModel.SelectionState.PlaylistSelection -> {
-            PlaylistSelectionPage(
-                state = selectionState,
-                onDismissRequest = { dialogViewModel.postAction(Action.Reset) },
-            )
-        }
-
-        DownloadDialogViewModel.SelectionState.Idle -> {}
-    }
-}
 
 @Composable
 private operator fun PaddingValues.plus(other: PaddingValues): PaddingValues {
@@ -321,7 +268,6 @@ fun DownloadPageImplV2(
     modifier: Modifier = Modifier,
     taskDownloadStateMap: SnapshotStateMap<Task, Task.State>,
     downloadCallback: () -> Unit = {},
-    onMenuOpen: (() -> Unit) = {},
     onSearchOpen: (() -> Unit) = {},
     onActionPost: (Task, UiAction) -> Unit,
 ) {
@@ -388,7 +334,6 @@ fun DownloadPageImplV2(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Spacer(Modifier.height(with(LocalDensity.current) { headerOffset.toDp() }))
                     Header(
-                        onMenuOpen = onMenuOpen,
                         onSearchOpen = onSearchOpen,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
@@ -545,7 +490,6 @@ fun DownloadPageImplV2(
 @Composable
 fun Header(
     modifier: Modifier = Modifier,
-    onMenuOpen: () -> Unit = {},
     onSearchOpen: (() -> Unit) = {},
 ) {
     val windowWidthSizeClass = LocalWindowWidthState.current
@@ -559,7 +503,6 @@ fun Header(
         else -> {
             HeaderCompact(
                 modifier = modifier,
-                onMenuOpen = onMenuOpen,
                 onSearchOpen = onSearchOpen,
             )
         }
@@ -569,21 +512,18 @@ fun Header(
 @Composable
 private fun HeaderCompact(
     modifier: Modifier = Modifier,
-    onMenuOpen: () -> Unit,
     onSearchOpen: (() -> Unit) = {},
 ) {
 
     Row(modifier = modifier.height(64.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onMenuOpen, modifier = Modifier) {
-            Icon(
-                imageVector = Icons.Outlined.Menu,
-                contentDescription = stringResource(R.string.show_navigation_drawer),
-                modifier = Modifier,
-            )
-        }
-        Spacer(modifier = Modifier.width(4.dp))
+        Icon(
+            imageVector = Icons.Rounded.DownloadForOffline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
-            stringResource(R.string.download_queue),
+            stringResource(R.string.nav_downloads),
             style =
                 MaterialTheme.typography.titleLarge.copy(
                     fontSize = 20.sp,
@@ -604,7 +544,7 @@ private fun HeaderCompact(
 private fun HeaderExpanded(modifier: Modifier = Modifier, onSearchOpen: (() -> Unit) = {}) {
     Row(modifier = modifier.height(64.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            stringResource(R.string.download_queue),
+            stringResource(R.string.nav_downloads),
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Medium),
         )
         Spacer(modifier = Modifier.weight(1f))
@@ -843,7 +783,6 @@ internal class DownloadPageV2Test {
                 DownloadPageImplV2(
                     taskDownloadStateMap = downloader.getTaskStateMap(),
                     onActionPost = { task, state -> },
-                    onMenuOpen = {},
                 )
             }
         }

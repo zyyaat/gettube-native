@@ -3,38 +3,38 @@ package com.junkfood.seal.ui.page
 import android.webkit.CookieManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DrawerValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.navigation
-import com.junkfood.seal.App
 import com.junkfood.seal.R
-import com.junkfood.seal.ui.common.HapticFeedback.slightHapticFeedback
-import com.junkfood.seal.ui.common.LocalWindowWidthState
 import com.junkfood.seal.ui.common.Route
 import com.junkfood.seal.ui.common.animatedComposable
 import com.junkfood.seal.ui.common.animatedComposableVariant
@@ -43,8 +43,10 @@ import com.junkfood.seal.ui.common.id
 import com.junkfood.seal.ui.common.slideInVerticallyComposable
 import com.junkfood.seal.ui.page.command.TaskListPage
 import com.junkfood.seal.ui.page.command.TaskLogPage
-import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel
 import com.junkfood.seal.ui.page.downloadv2.DownloadPageV2
+import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogHost
+import com.junkfood.seal.ui.page.downloadv2.configure.DownloadDialogViewModel
+import com.junkfood.seal.ui.page.search.SearchPage
 import com.junkfood.seal.ui.page.settings.SettingsPage
 import com.junkfood.seal.ui.page.settings.about.AboutPage
 import com.junkfood.seal.ui.page.settings.about.CreditsPage
@@ -65,30 +67,25 @@ import com.junkfood.seal.ui.page.settings.network.CookiesViewModel
 import com.junkfood.seal.ui.page.settings.network.NetworkPreferences
 import com.junkfood.seal.ui.page.settings.network.WebViewPage
 import com.junkfood.seal.ui.page.settings.troubleshooting.TroubleShootingPage
-import com.junkfood.seal.ui.page.search.SearchPage
 import com.junkfood.seal.ui.page.videolist.VideoListPage
-import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
-private const val TAG = "HomeEntry"
+private val BottomTabs = listOf(Route.SEARCH, Route.HOME, Route.SETTINGS_PAGE)
 
-private val TopDestinations =
-    listOf(Route.HOME, Route.SEARCH, Route.TASK_LIST, Route.SETTINGS_PAGE, Route.DOWNLOADS)
+/** Bottom-bar tab switching: single-top, state saved/restored per tab. */
+private fun navigateToTab(navController: NavHostController, route: String) {
+    navController.navigate(route) {
+        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
 
 @Composable
 fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
 
     val navController = rememberNavController()
-    val context = LocalContext.current
-    val view = LocalView.current
-    val windowWidth = LocalWindowWidthState.current
-    val sheetState by dialogViewModel.sheetStateFlow.collectAsStateWithLifecycle()
     val cookiesViewModel: CookiesViewModel = koinViewModel()
-
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val versionReport = App.packageInfo.versionName.toString()
-    val appName = stringResource(R.string.app_name)
-    val scope = rememberCoroutineScope()
 
     val onNavigateBack: () -> Unit = {
         with(navController) {
@@ -98,72 +95,35 @@ fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
         }
     }
 
-    if (sheetState is DownloadDialogViewModel.SheetState.Configure) {
-        if (navController.currentDestination?.route != Route.HOME) {
-            navController.popBackStack(route = Route.HOME, inclusive = false, saveState = true)
-        }
-    }
-
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     var currentTopDestination by rememberSaveable { mutableStateOf(currentRoute) }
 
     LaunchedEffect(currentRoute) {
-        if (currentRoute in TopDestinations) {
+        if (currentRoute in BottomTabs) {
             currentTopDestination = currentRoute
         }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        NavigationDrawer(
-            windowWidth = windowWidth,
-            drawerState = drawerState,
-            currentRoute = currentRoute,
-            currentTopDestination = currentTopDestination,
-            showQuickSettings = true,
-            gesturesEnabled = currentRoute == Route.HOME,
-            onDismissRequest = { drawerState.close() },
-            onNavigateToRoute = {
-                if (currentRoute != it) {
-                    navController.navigate(it) {
-                        launchSingleTop = true
-                        popUpTo(route = Route.HOME)
-                    }
-                }
-            },
-            footer = {
-                Text(
-                    appName + "\n" + versionReport + "\n" + currentRoute,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 12.dp),
-                )
-            },
-        ) {
+        Column(modifier = Modifier.fillMaxSize()) {
             NavHost(
-                modifier = Modifier.align(Alignment.Center),
                 navController = navController,
-                startDestination = Route.HOME,
+                startDestination = Route.SEARCH,
+                modifier = Modifier.weight(1f),
             ) {
-                animatedComposable(Route.HOME) {
-                    DownloadPageV2(
-                        dialogViewModel = dialogViewModel,
-                        onMenuOpen = {
-                            view.slightHapticFeedback()
-                            scope.launch { drawerState.open() }
-                        },
-                        onSearchOpen = {
-                            navController.navigate(Route.SEARCH) { launchSingleTop = true }
-                        },
-                    )
-                }
                 animatedComposable(Route.SEARCH) {
                     SearchPage(
-                        onNavigateBack = onNavigateBack,
                         onVideoClick = { url ->
                             dialogViewModel.postAction(
                                 DownloadDialogViewModel.Action.ShowSheet(listOf(url))
                             )
                         },
+                    )
+                }
+                animatedComposable(Route.HOME) {
+                    DownloadPageV2(
+                        dialogViewModel = dialogViewModel,
+                        onSearchOpen = { navigateToTab(navController, Route.SEARCH) },
                     )
                 }
                 animatedComposable(Route.DOWNLOADS) { VideoListPage { onNavigateBack() } }
@@ -192,9 +152,63 @@ fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
                 )
             }
 
-            AppUpdater()
-            YtdlpUpdater()
+            GetTubeBottomBar(
+                currentTopDestination = currentTopDestination,
+                onSelectTab = { navigateToTab(navController, it) },
+            )
         }
+
+        // The download sheet lives ABOVE every tab, like the old app's quality sheet.
+        DownloadDialogHost(dialogViewModel)
+
+        AppUpdater()
+        YtdlpUpdater()
+    }
+}
+
+/** GetTube bottom navigation — identical structure to the old Flutter app. */
+@Composable
+private fun GetTubeBottomBar(
+    currentTopDestination: String?,
+    onSelectTab: (String) -> Unit,
+) {
+    NavigationBar {
+        NavigationBarItem(
+            selected = currentTopDestination == Route.SEARCH,
+            onClick = { onSelectTab(Route.SEARCH) },
+            icon = {
+                Icon(
+                    if (currentTopDestination == Route.SEARCH) Icons.Filled.Search
+                    else Icons.Outlined.Search,
+                    contentDescription = stringResource(R.string.nav_search),
+                )
+            },
+            label = { Text(stringResource(R.string.nav_search)) },
+        )
+        NavigationBarItem(
+            selected = currentTopDestination == Route.HOME,
+            onClick = { onSelectTab(Route.HOME) },
+            icon = {
+                Icon(
+                    if (currentTopDestination == Route.HOME) Icons.Filled.Download
+                    else Icons.Outlined.Download,
+                    contentDescription = stringResource(R.string.nav_downloads),
+                )
+            },
+            label = { Text(stringResource(R.string.nav_downloads)) },
+        )
+        NavigationBarItem(
+            selected = currentTopDestination == Route.SETTINGS_PAGE,
+            onClick = { onSelectTab(Route.SETTINGS) },
+            icon = {
+                Icon(
+                    if (currentTopDestination == Route.SETTINGS_PAGE) Icons.Filled.Settings
+                    else Icons.Outlined.Settings,
+                    contentDescription = stringResource(R.string.nav_settings),
+                )
+            },
+            label = { Text(stringResource(R.string.nav_settings)) },
+        )
     }
 }
 

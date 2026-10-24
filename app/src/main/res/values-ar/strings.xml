@@ -456,6 +456,16 @@
     <string name="no_results">لا توجد نتائج</string>
     <string name="search_failed">تعذر البحث — تحقق من الاتصال</string>
     <string name="retry">إعادة المحاولة</string>
+    <!-- GetTube brand -->
+    <string name="nav_search">بحث</string>
+    <string name="nav_downloads">التحميلات</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="recent_searches">عمليات البحث الأخيرة</string>
+    <string name="clear_all">مسح الكل</string>
+    <string name="hero_tagline">ابحث عن أي فيديو على يوتيوب ونزّله بكل الجودات — مجاناً، للأبد</string>
+    <string name="feat_all_qualities">كل الجودات</string>
+    <string name="feat_no_ads">بدون إعلانات</string>
+    <string name="feat_no_paywall">بدون اشتراكات</string>
     <string name="available_qualities">الجودات المتاحة</string>
     <string name="fetching_video_info">جارٍ جلب معلومات الفيديو…</string>
     <string name="mp3_audio">صوت MP3</string>

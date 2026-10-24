@@ -156,7 +156,8 @@ data class FixedColorRoles(
     }
 }
 
-const val DEFAULT_SEED_COLOR = 0xa3d48d
+/** GetTube brand seed — deep violet, identical to the Flutter app's AppColors.seed. */
+val DEFAULT_SEED_COLOR: Int = 0xFF7C4DFF.toInt()
 
 /**
  * @return a [Color] generated using [Hct] algorithm, harmonized with `primary` color
