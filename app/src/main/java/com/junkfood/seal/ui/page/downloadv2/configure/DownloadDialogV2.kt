@@ -61,6 +61,7 @@ import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.NewLabel
+import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.SettingsSuggest
 import androidx.compose.material.icons.outlined.VideoFile
 import androidx.compose.material3.Button
@@ -72,8 +73,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
@@ -549,7 +550,7 @@ private sealed interface SheetInfoState {
 
     data class Done(val info: VideoInfo) : SheetInfoState
 
-    data object Failed : SheetInfoState
+    data class Failed(val throwable: Throwable? = null) : SheetInfoState
 }
 
 private enum class SheetQualityKind { HIGH, READY, AUDIO }
@@ -754,17 +755,18 @@ private fun ConfigurePage(
             mutableStateOf(PreferenceUtil.getTemplate())
         }
 
-    LaunchedEffect(selectedType) {
-        if (selectedType == Playlist) {
-            useFormatSelection = false
-        }
-    }
-
-    // GetTube-style: fetch the video's real info so only qualities that actually
-    // exist are offered. Falls back to the generic preset UI on failure.
+    // GetTube flow: the sheet only ever shows GetTube-styled states — a loading
+    // state while the real formats are fetched, the classic quality list once
+    // they arrive, a playlist card for playlist links and an error card with
+    // retry otherwise. The legacy preset UI below is kept ONLY for the
+    // custom-command flow, matching the original Flutter app exactly.
     var infoState by remember(url) { mutableStateOf<SheetInfoState>(SheetInfoState.Loading) }
+    var retryCount by remember(url) { mutableIntStateOf(0) }
 
-    LaunchedEffect(url) {
+    val isCommandFlow = selectedType == Command
+    LaunchedEffect(url, isCommandFlow, retryCount) {
+        if (isCommandFlow) return@LaunchedEffect
+        infoState = SheetInfoState.Loading
         val result =
             withContext(Dispatchers.IO) {
                 DownloadUtil.fetchVideoInfoFromUrl(url = url, taskKey = INFO_TASK_KEY)
@@ -772,53 +774,106 @@ private fun ConfigurePage(
         infoState =
             result.fold(
                 onSuccess = { SheetInfoState.Done(it) },
-                onFailure = { SheetInfoState.Failed },
+                onFailure = { SheetInfoState.Failed(it) },
             )
     }
     DisposableEffect(url) {
         onDispose { YoutubeDL.destroyProcessById(INFO_TASK_KEY) }
     }
 
-    // Classic GetTube quality sheet: one list with every quality the video
-    // actually offers (high / instant / audio), select-then-confirm.
-    val sheetOptions =
-        remember(infoState) {
-            (infoState as? SheetInfoState.Done)?.info?.buildSheetOptions().orEmpty()
-        }
-    val useClassicSheet =
-        infoState is SheetInfoState.Done &&
-            sheetOptions.isNotEmpty() &&
-            selectedType != Command &&
-            selectedType != Playlist
-
-    if (useClassicSheet) {
-        var selectedOption by remember(url) { mutableStateOf<SheetQualityOption?>(null) }
-        val fetchedInfo = (infoState as SheetInfoState.Done).info
-        ClassicQualitySheet(
-            info = fetchedInfo,
-            options = sheetOptions,
-            selected = selectedOption,
-            onSelect = { selectedOption = it },
-            onDownload = { option ->
-                onConfigSave(
-                    config.copy(
-                        useFormatSelection = false,
-                        downloadType = if (option.audio) Audio else Video,
-                    )
-                )
-                val base =
-                    preferences.copy(
-                        extractAudio = option.audio,
-                        formatIdString = if (option.mp3) "" else option.formatExpr,
-                    )
-                val prefs =
-                    if (option.mp3) base.copy(convertAudio = true, audioConvertFormat = CONVERT_MP3)
-                    else base
-                onActionPost(
-                    Action.DownloadWithPreset(urlList = listOf(url), preferences = prefs)
-                )
-            },
+    // Safety hatch: start a download with the user's saved settings without
+    // ever surfacing the legacy configure UI (used from the error card).
+    val startPresetDownload: () -> Unit = {
+        onConfigSave(
+            config.copy(
+                useFormatSelection = false,
+                downloadType = if (selectedType == Audio) Audio else Video,
+            )
         )
+        onActionPost(
+            Action.DownloadWithPreset(
+                urlList = listOf(url),
+                preferences = preferences.copy(extractAudio = selectedType == Audio),
+            )
+        )
+    }
+
+    if (!isCommandFlow) {
+        when (val info = infoState) {
+            is SheetInfoState.Loading -> ClassicSheetLoading()
+            is SheetInfoState.Done -> {
+                val options = remember(info.info) { info.info.buildSheetOptions() }
+                val isPlaylist =
+                    info.info.type == "playlist" ||
+                        (options.isEmpty() && info.info.formats.isNullOrEmpty())
+                when {
+                    isPlaylist ->
+                        ClassicPlaylistSheet(
+                            title = info.info.title.ifEmpty { url },
+                            onDownloadAll = {
+                                onActionPost(
+                                    Action.FetchPlaylist(url = url, preferences = preferences)
+                                )
+                            },
+                        )
+
+                    options.isNotEmpty() -> {
+                        // Classic GetTube quality sheet: one list with every
+                        // quality the video actually offers (high / instant /
+                        // audio), select-then-confirm.
+                        var selectedOption by
+                            remember(url) { mutableStateOf<SheetQualityOption?>(null) }
+                        ClassicQualitySheet(
+                            info = info.info,
+                            options = options,
+                            selected = selectedOption,
+                            onSelect = { selectedOption = it },
+                            onDownload = { option ->
+                                onConfigSave(
+                                    config.copy(
+                                        useFormatSelection = false,
+                                        downloadType = if (option.audio) Audio else Video,
+                                    )
+                                )
+                                val base =
+                                    preferences.copy(
+                                        extractAudio = option.audio,
+                                        formatIdString =
+                                            if (option.mp3) "" else option.formatExpr,
+                                    )
+                                val prefs =
+                                    if (option.mp3)
+                                        base.copy(
+                                            convertAudio = true,
+                                            audioConvertFormat = CONVERT_MP3,
+                                        )
+                                    else base
+                                onActionPost(
+                                    Action.DownloadWithPreset(
+                                        urlList = listOf(url),
+                                        preferences = prefs,
+                                    )
+                                )
+                            },
+                        )
+                    }
+
+                    else ->
+                        ClassicSheetError(
+                            throwable = null,
+                            onRetry = { retryCount++ },
+                            onFallback = startPresetDownload,
+                        )
+                }
+            }
+
+            is SheetInfoState.Failed ->
+                ClassicSheetError(
+                    throwable = info.throwable,
+                    onRetry = { retryCount++ },
+                    onFallback = startPresetDownload,
+                )
+        }
         return
     }
 
@@ -835,118 +890,43 @@ private fun ConfigurePage(
                 selectedType = selectedType,
                 onSelect = { selectedType = it },
             )
-            Column(modifier = Modifier.animateContentSize()) {
-                if (selectedType != Command) {
-                    if (selectedType == Playlist) {
-                        DrawerSheetSubtitle(
-                            text = stringResource(id = R.string.format_selection),
-                            modifier = Modifier,
-                        )
-                        Preset(
-                            modifier = Modifier,
-                            preference = preferences,
-                            selected = !useFormatSelection,
-                            downloadType = selectedType,
-                            onClick = { useFormatSelection = false },
-                            showEditIcon = false,
-                            onEdit = { onPresetEdit(selectedType) },
-                        )
-                        Custom(
-                            selected = useFormatSelection,
-                            enabled = false,
-                            onClick = { useFormatSelection = true },
-                        )
-                    } else {
-                        when (infoState) {
-                            is SheetInfoState.Done -> {}
-                            SheetInfoState.Loading -> {
-                                Row(
-                                    modifier =
-                                        Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.width(12.dp))
-                                    Text(
-                                        text = stringResource(R.string.fetching_video_info),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    LinearProgressIndicator(
-                                        modifier =
-                                            Modifier.padding(start = 12.dp).weight(1f),
-                                    )
-                                }
-                            }
-
-                            SheetInfoState.Failed -> {
-                                DrawerSheetSubtitle(
-                                    text = stringResource(id = R.string.format_selection),
-                                    modifier = Modifier,
-                                )
-                                Preset(
-                                    modifier = Modifier,
-                                    preference = preferences,
-                                    selected = !useFormatSelection,
-                                    downloadType = selectedType,
-                                    onClick = { useFormatSelection = false },
-                                    showEditIcon = !useFormatSelection,
-                                    onEdit = { onPresetEdit(selectedType) },
-                                )
-                                Custom(
-                                    selected = useFormatSelection,
-                                    enabled = true,
-                                    onClick = { useFormatSelection = true },
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    if (showTemplateSelectionDialog) {
-                        TemplatePickerDialog { showTemplateSelectionDialog = false }
-                    }
-                    if (showTemplateCreatorDialog) {
-                        CommandTemplateDialog(
-                            onDismissRequest = { showTemplateCreatorDialog = false },
-                            confirmationCallback = { scope.launch { TEMPLATE_ID.updateInt(it) } },
-                        )
-                    }
-                    if (showTemplateEditorDialog) {
-                        CommandTemplateDialog(
-                            commandTemplate = template,
-                            onDismissRequest = { showTemplateEditorDialog = false },
-                        )
-                    }
-                    DrawerSheetSubtitle(
-                        text = stringResource(id = R.string.template_selection),
-                        modifier = Modifier,
+            if (showTemplateSelectionDialog) {
+                TemplatePickerDialog { showTemplateSelectionDialog = false }
+            }
+            if (showTemplateCreatorDialog) {
+                CommandTemplateDialog(
+                    onDismissRequest = { showTemplateCreatorDialog = false },
+                    confirmationCallback = { scope.launch { TEMPLATE_ID.updateInt(it) } },
+                )
+            }
+            if (showTemplateEditorDialog) {
+                CommandTemplateDialog(
+                    commandTemplate = template,
+                    onDismissRequest = { showTemplateEditorDialog = false },
+                )
+            }
+            DrawerSheetSubtitle(text = stringResource(id = R.string.template_selection))
+            LazyRow(modifier = Modifier) {
+                item {
+                    ButtonChip(
+                        icon = Icons.Outlined.Code,
+                        label = template.name,
+                        onClick = { showTemplateSelectionDialog = true },
                     )
-                    LazyRow(modifier = Modifier) {
-                        item {
-                            ButtonChip(
-                                icon = Icons.Outlined.Code,
-                                label = template.name,
-                                onClick = { showTemplateSelectionDialog = true },
-                            )
-                        }
-                        item {
-                            ButtonChip(
-                                icon = Icons.Outlined.NewLabel,
-                                label = stringResource(id = R.string.new_template),
-                                onClick = { showTemplateCreatorDialog = true },
-                            )
-                        }
-                        item {
-                            ButtonChip(
-                                icon = Icons.Outlined.Edit,
-                                label = stringResource(id = R.string.edit_template, template.name),
-                                onClick = { showTemplateEditorDialog = true },
-                            )
-                        }
-                    }
+                }
+                item {
+                    ButtonChip(
+                        icon = Icons.Outlined.NewLabel,
+                        label = stringResource(id = R.string.new_template),
+                        onClick = { showTemplateCreatorDialog = true },
+                    )
+                }
+                item {
+                    ButtonChip(
+                        icon = Icons.Outlined.Edit,
+                        label = stringResource(id = R.string.edit_template, template.name),
+                        onClick = { showTemplateEditorDialog = true },
+                    )
                 }
             }
         }
@@ -1611,6 +1591,129 @@ private fun QualityOptionRow(
                 tint = if (selected) primary else MaterialTheme.colorScheme.outline,
             )
         }
+    }
+}
+
+// GetTube-styled states shown while the real formats are being fetched (or
+// when fetching fails / a playlist link is opened) — the legacy preset UI is
+// never shown in the normal flow, matching the original Flutter app.
+
+@Composable
+private fun ClassicSheetLoading(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(vertical = 96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.quality_sheet_loading),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ClassicSheetError(
+    modifier: Modifier = Modifier,
+    throwable: Throwable?,
+    onRetry: () -> Unit,
+    onFallback: () -> Unit,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.ErrorOutline,
+            contentDescription = null,
+            modifier = Modifier.size(44.dp),
+            tint = MaterialTheme.colorScheme.error,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = stringResource(R.string.quality_sheet_error_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = throwable?.message ?: stringResource(R.string.quality_sheet_error_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 4,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+        Row {
+            OutlinedButton(onClick = onFallback) {
+                Text(stringResource(R.string.quality_sheet_fallback))
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+        }
+    }
+}
+
+@Composable
+private fun ClassicPlaylistSheet(
+    modifier: Modifier = Modifier,
+    title: String,
+    onDownloadAll: () -> Unit,
+) {
+    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier =
+                    Modifier.size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.PlaylistPlay,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.playlist_sheet_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onDownloadAll,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Download,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.playlist_download_all),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.height(16.dp))
     }
 }
 

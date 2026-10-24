@@ -2,6 +2,23 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.3.1] - build-6
+
+### Removed — legacy "Adjust settings" dialog
+- The old Seal configure dialog ("Adjust settings before download" with the
+  Audio / Video / Playlist chips and the "Fetching video info" row) no longer
+  appears in the download flow at all — it was still shown for the first few
+  seconds while the real formats were being fetched, before the quality sheet
+  appeared
+- The sheet now opens **directly in GetTube style**, exactly like the original
+  Flutter app: a clean "Analyzing available qualities…" loading state, then the
+  classic quality list
+- Fetch failures now show a GetTube-styled error card with a Retry button (and
+  a "Download with saved settings" safety hatch) instead of the legacy preset UI
+- Opening a playlist link now shows a GetTube playlist card with a
+  "Download entire playlist" button instead of the type-selection chips
+- The legacy configure UI survives only for the advanced custom-command flow
+
 ## [1.3.0] - build-5
 
 ### Changed — classic GetTube quality sheet

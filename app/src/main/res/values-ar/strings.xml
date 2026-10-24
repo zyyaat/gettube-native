@@ -479,4 +479,10 @@
     <string name="quality_section_audio">الصوت فقط</string>
     <string name="quality_best_badge">الأفضل</string>
     <string name="download_with_label">تنزيل — %1$s</string>
+    <string name="quality_sheet_loading">جاري تحليل الجودات المتاحة…</string>
+    <string name="quality_sheet_error_title">تعذر جلب معلومات الفيديو</string>
+    <string name="quality_sheet_error_body">تأكد من الرابط وحاول مرة أخرى.</string>
+    <string name="quality_sheet_fallback">تنزيل بالإعدادات المحفوظة</string>
+    <string name="playlist_sheet_subtitle">قائمة تشغيل — سيتم تنزيل كل المقاطع</string>
+    <string name="playlist_download_all">تنزيل القائمة كاملة</string>
 </resources>

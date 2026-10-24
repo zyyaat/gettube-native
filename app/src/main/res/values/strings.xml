@@ -478,4 +478,10 @@
     <string name="quality_section_audio">Audio only</string>
     <string name="quality_best_badge">Best</string>
     <string name="download_with_label">Download — %1$s</string>
+    <string name="quality_sheet_loading">Analyzing available qualities…</string>
+    <string name="quality_sheet_error_title">Couldn\'t load video info</string>
+    <string name="quality_sheet_error_body">Check the link and try again.</string>
+    <string name="quality_sheet_fallback">Download with saved settings</string>
+    <string name="playlist_sheet_subtitle">Playlist — every video will be downloaded</string>
+    <string name="playlist_download_all">Download entire playlist</string>
 </resources>
