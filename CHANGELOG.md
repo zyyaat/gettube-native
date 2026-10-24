@@ -2,6 +2,21 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.3.3] - build-8
+
+### Changed — faster info fetching & instant download start
+- The info fetch now passes `youtube:player_skip=webpage,configs` to yt-dlp:
+  the watch-page HTML and the tv client config are no longer downloaded, so
+  "Analyzing available qualities…" finishes noticeably sooner (the player
+  response alone carries every field the quality sheet needs)
+- When a download starts within 10 minutes of the sheet's fetch, the raw info
+  JSON is handed back to yt-dlp via `--load-info-json`: the download engine
+  skips its whole extraction phase (webpage, player JS, client APIs, m3u8)
+  and starts writing bytes immediately instead of re-analyzing the video
+- yt-dlp itself falls back to normal re-extraction from the URL if the cached
+  JSON is ever stale, so nothing can break — downloads stay as reliable as
+  before, just without the duplicated network work
+
 ## [1.3.2] - build-7
 
 ### Fixed — video info fetched twice

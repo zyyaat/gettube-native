@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.File
 import java.util.Locale
 
 object DownloadUtil {
@@ -64,31 +65,64 @@ object DownloadUtil {
     // GetTube: the quality sheet fetches the video's full info (yt-dlp -J)
     // before the user picks a quality; keep the freshest results around so the
     // download engine reuses them instead of fetching the same JSON twice.
+    // The raw JSON is kept as well: the download run hands it back to yt-dlp
+    // via --load-info-json and skips its whole extraction phase at start-up.
     private const val INFO_CACHE_LIMIT = 24
     private const val INFO_CACHE_TTL_MS = 10 * 60 * 1000L
 
+    private class CachedVideoInfo(
+        val info: VideoInfo,
+        val rawJson: String,
+        val savedAt: Long,
+    )
+
     private val infoCacheLock = Any()
     private val infoCache =
-        object : LinkedHashMap<String, Pair<Long, VideoInfo>>(16, 0.75f, true) {
+        object : LinkedHashMap<String, CachedVideoInfo>(16, 0.75f, true) {
             override fun removeEldestEntry(
-                eldest: MutableMap.MutableEntry<String, Pair<Long, VideoInfo>>
+                eldest: MutableMap.MutableEntry<String, CachedVideoInfo>
             ): Boolean = size > INFO_CACHE_LIMIT
         }
 
     private fun infoCacheKey(url: String, playlistIndex: Int?): String =
         "$playlistIndex::$url"
 
-    private fun getCachedVideoInfo(url: String, playlistIndex: Int?): VideoInfo? =
+    private fun getCachedInfo(url: String, playlistIndex: Int?): CachedVideoInfo? =
         synchronized(infoCacheLock) {
             infoCache[infoCacheKey(url, playlistIndex)]
-                ?.takeIf { System.currentTimeMillis() - it.first < INFO_CACHE_TTL_MS }
-                ?.second
+                ?.takeIf { System.currentTimeMillis() - it.savedAt < INFO_CACHE_TTL_MS }
         }
 
-    private fun cacheVideoInfo(url: String, playlistIndex: Int?, info: VideoInfo) {
+    private fun getCachedVideoInfo(url: String, playlistIndex: Int?): VideoInfo? =
+        getCachedInfo(url, playlistIndex)?.info
+
+    private fun cacheVideoInfo(
+        url: String,
+        playlistIndex: Int?,
+        info: VideoInfo,
+        rawJson: String,
+    ) {
         synchronized(infoCacheLock) {
-            infoCache[infoCacheKey(url, playlistIndex)] = System.currentTimeMillis() to info
+            infoCache[infoCacheKey(url, playlistIndex)] =
+                CachedVideoInfo(info, rawJson, System.currentTimeMillis())
         }
+    }
+
+    /** Materializes a fresh cached info JSON into a temp file for --load-info-json. */
+    private fun getReusableInfoJsonFile(
+        url: String,
+        videoInfo: VideoInfo,
+        taskId: String,
+    ): File? {
+        val cached =
+            getCachedInfo(url, null)
+                ?: getCachedInfo(videoInfo.originalUrl.orEmpty(), null)
+                ?: return null
+        return runCatching {
+            val file = File(context.cacheDir, "gettube_info_$taskId.json")
+            file.writeText(cached.rawJson)
+            file
+        }.getOrNull()
     }
 
     const val BASENAME = "%(title).200B"
@@ -179,11 +213,11 @@ object DownloadUtil {
     private fun getVideoInfo(
         request: YoutubeDLRequest,
         taskKey: String? = null,
-    ): Result<VideoInfo> =
+    ): Result<Pair<VideoInfo, String>> =
         request.runCatching {
             val response: YoutubeDLResponse =
                 YoutubeDL.getInstance().execute(request, taskKey, null)
-            jsonFormat.decodeFromString(response.out)
+            jsonFormat.decodeFromString<VideoInfo>(response.out) to response.out
         }
 
     @CheckResult
@@ -231,11 +265,17 @@ object DownloadUtil {
                     } else {
                         addOption("--dump-single-json")
                     }
+                    // GetTube: the player response alone carries every field the
+                    // quality sheet needs; skipping the watch-page HTML and the tv
+                    // client config shaves 1-2s of sequential round-trips per fetch.
+                    addOption("--extractor-args", "youtube:player_skip=webpage,configs")
                     addOption("-R", "1")
                     addOption("--no-playlist")
                     addOption("--socket-timeout", "5")
                 }
-            return getVideoInfo(request, taskKey).onSuccess { cacheVideoInfo(url, playlistIndex, it) }
+            return getVideoInfo(request, taskKey).onSuccess { (info, rawJson) ->
+                cacheVideoInfo(url, playlistIndex, info, rawJson)
+            }
         }
     }
 
@@ -734,9 +774,22 @@ object DownloadUtil {
             val pathBuilder = StringBuilder()
             val outputBuilder = StringBuilder()
 
+            // GetTube: hand the JSON the sheet already fetched back to yt-dlp;
+            // with --load-info-json it skips its whole extraction phase, so the
+            // download starts on the bytes right away instead of sitting at 0%
+            // while the video is re-analyzed. yt-dlp ignores the positional URL
+            // in this mode and falls back to re-extraction if the JSON is stale.
+            val cachedInfoJson =
+                if (playlistItem == 0 && videoClips.isEmpty()) {
+                    getReusableInfoJsonFile(url, videoInfo, taskId)
+                } else null
+
             request
                 .apply {
                     addOption("--no-mtime")
+                    if (cachedInfoJson != null) {
+                        addOption("--load-info-json", cachedInfoJson.absolutePath)
+                    }
                     //                addOption("-v")
                     if (cookies) {
                         enableCookies(userAgentString)
@@ -852,8 +905,10 @@ object DownloadUtil {
                 .runCatching {
                     YoutubeDL.getInstance()
                         .execute(request = this, processId = taskId, callback = progressCallback)
+                        .also { cachedInfoJson?.delete() }
                 }
                 .onFailure { th ->
+                    cachedInfoJson?.delete()
                     return if (
                         sponsorBlock &&
                             th.message?.contains("Unable to communicate with SponsorBlock API") ==
