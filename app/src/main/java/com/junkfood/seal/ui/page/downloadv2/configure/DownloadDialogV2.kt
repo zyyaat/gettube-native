@@ -155,6 +155,7 @@ import com.junkfood.seal.util.DownloadType.Playlist
 import com.junkfood.seal.util.DownloadType.Video
 import com.junkfood.seal.util.DownloadType.entries
 import com.junkfood.seal.util.DownloadUtil
+import com.junkfood.seal.util.FetchDiagnosticsException
 import com.junkfood.seal.util.Format
 import com.junkfood.seal.util.FORMAT_SELECTION
 import com.junkfood.seal.util.PreferenceStrings
@@ -550,7 +551,13 @@ private sealed interface SheetInfoState {
 
     data class Done(val info: VideoInfo) : SheetInfoState
 
-    data class Failed(val throwable: Throwable? = null) : SheetInfoState
+    data class Failed(
+        val throwable: Throwable? = null,
+        // GetTube build-13: per-stage fetch diagnostic trail (app/yt-dlp
+        // versions + native/pinned/default stage results) shown under the
+        // error so on-device failures are diagnosable from one screenshot.
+        val diagnostics: String? = null,
+    ) : SheetInfoState
 }
 
 private enum class SheetQualityKind { HIGH, READY, AUDIO }
@@ -774,7 +781,12 @@ private fun ConfigurePage(
         infoState =
             result.fold(
                 onSuccess = { SheetInfoState.Done(it) },
-                onFailure = { SheetInfoState.Failed(it) },
+                onFailure = { th ->
+                    SheetInfoState.Failed(
+                        throwable = th,
+                        diagnostics = (th as? FetchDiagnosticsException)?.trail,
+                    )
+                },
             )
     }
     DisposableEffect(url) {
@@ -870,6 +882,7 @@ private fun ConfigurePage(
             is SheetInfoState.Failed ->
                 ClassicSheetError(
                     throwable = info.throwable,
+                    diagnostics = info.diagnostics,
                     onRetry = { retryCount++ },
                     onFallback = startPresetDownload,
                 )
@@ -1618,6 +1631,7 @@ private fun ClassicSheetLoading(modifier: Modifier = Modifier) {
 private fun ClassicSheetError(
     modifier: Modifier = Modifier,
     throwable: Throwable?,
+    diagnostics: String? = null,
     onRetry: () -> Unit,
     onFallback: () -> Unit,
 ) {
@@ -1645,6 +1659,17 @@ private fun ClassicSheetError(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp),
         )
+        if (!diagnostics.isNullOrBlank()) {
+            Text(
+                text = diagnostics,
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
         Spacer(Modifier.height(20.dp))
         Row {
             OutlinedButton(onClick = onFallback) {

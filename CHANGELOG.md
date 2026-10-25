@@ -2,6 +2,29 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.1] - build-13
+
+### Added — visible fetch diagnostics on the error sheet
+
+- When fetching video info fails, the error card now shows a compact
+  diagnostic trail under the error message: the app version, the yt-dlp
+  version actually running on the device, and the result, failure reason and
+  duration of every stage that was tried (native InnerTube → pinned JS-less
+  clients → default clients). One screenshot is now enough to see exactly
+  which stage ran and why the fast paths were skipped — no more silent
+  fallbacks hiding the real cause
+- The error message itself is now the last actionable yt-dlp `ERROR:` line
+  instead of the raw stderr head (which used to show only a `WARNING:` about
+  PO tokens and hid the real failure)
+
+### Changed — fast-fail timeouts on the native path
+
+- The native InnerTube fetch is now bounded by a hard 12-second deadline and
+  tighter HTTP timeouts (6s connect / 10s read / 15s call), so a stuck
+  request can never turn the fast path into a second long wait in front of
+  the yt-dlp fallbacks; a timed-out attempt falls through to yt-dlp
+  immediately
+
 ## [1.4.0] - build-12
 
 ### Added — native InnerTube fast path (NewPipeExtractor)

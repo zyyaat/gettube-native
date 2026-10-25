@@ -5,6 +5,10 @@ import com.junkfood.seal.util.VideoInfo
 import java.io.IOException
 import java.net.URI
 import java.time.Duration
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -56,10 +60,45 @@ object NewPipeVideoInfoFetcher {
 
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .readTimeout(Duration.ofSeconds(20))
-            .callTimeout(Duration.ofSeconds(45))
+            // GetTube build-13: the native path is the FAST path — give up
+            // quickly (12s hard deadline in fetchVideoInfoWithDeadline) so a
+            // stuck request can never turn the fast path into a second 20s
+            // wait in front of the yt-dlp fallbacks.
+            .connectTimeout(Duration.ofSeconds(6))
+            .readTimeout(Duration.ofSeconds(10))
+            .callTimeout(Duration.ofSeconds(15))
             .build()
+    }
+
+    /**
+     * Runs [fetchVideoInfo] on a background thread with a hard wall-clock
+     * deadline (12s). On timeout the attempt is abandoned and reported as
+     * failure so the caller falls through to yt-dlp immediately. A fresh
+     * single-thread executor is used per call and shut down afterwards, so a
+     * timed-out attempt whose HTTP request is still blocked can never queue
+     * behind (or block) later attempts — OkHttp's callTimeout bounds the
+     * straggler thread's lifetime on its own.
+     */
+    fun fetchVideoInfoWithDeadline(
+        url: String,
+        deadlineMs: Long = 12_000L,
+    ): Result<Pair<VideoInfo, String>> {
+        val executor = Executors.newSingleThreadExecutor()
+        val future = executor.submit(Callable { fetchVideoInfo(url) })
+        return try {
+            try {
+                Result.success(future.get(deadlineMs, TimeUnit.MILLISECONDS))
+            } catch (te: TimeoutException) {
+                future.cancel(true)
+                Result.failure(
+                    IllegalStateException("native fetch timed out after ${deadlineMs}ms")
+                )
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
     }
 
     private class OkHttpDownloader(private val client: OkHttpClient) : Downloader() {

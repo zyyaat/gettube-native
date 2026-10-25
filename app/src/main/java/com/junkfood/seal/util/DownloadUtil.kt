@@ -44,6 +44,22 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.Locale
+import kotlin.concurrent.Volatile
+
+/**
+ * GetTube build-13: thrown when every stage of the info-fetch chain
+ * (native InnerTube -> pinned yt-dlp clients -> default yt-dlp clients)
+ * failed. [message] carries the most actionable yt-dlp error line; [trail]
+ * carries a compact per-stage diagnostic string that the error sheet displays
+ * verbatim, so on-device failures become diagnosable from a single screenshot
+ * (app version, yt-dlp version, which stage ran, why the fast paths were
+ * skipped and how long each stage took).
+ */
+class FetchDiagnosticsException(
+    val trail: String,
+    message: String,
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
 
 object DownloadUtil {
 
@@ -59,6 +75,35 @@ object DownloadUtil {
     private val jsonFormat = Json { ignoreUnknownKeys = true }
 
     private const val TAG = "DownloadUtil"
+
+    private val appVersionName: String by lazy {
+        runCatching {
+            App.context.packageManager
+                .getPackageInfo(App.context.packageName, 0)
+                .versionName
+        }.getOrNull() ?: "?"
+    }
+
+    @Volatile
+    private var cachedYtDlpVersion: String? = null
+
+    private fun ytDlpVersionSafe(): String =
+        cachedYtDlpVersion
+            ?: runCatching {
+                    YoutubeDL.getInstance().version(App.context)?.trim()
+                }
+                .getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?.also { cachedYtDlpVersion = it }
+            ?: "?"
+
+    /** The last actionable yt-dlp "ERROR:" line from a stderr dump. */
+    private fun lastErrorLine(raw: String?): String? =
+        raw
+            ?.lineSequence()
+            ?.lastOrNull { it.contains("ERROR", ignoreCase = true) }
+            ?.trim()
+            ?.take(160)
 
     const val SEARCH_PROCESS_ID = "ytsearch"
 
@@ -256,6 +301,13 @@ object DownloadUtil {
         // instead of spawning yt-dlp twice for the same video.
         getCachedVideoInfo(url, playlistIndex)?.let { return Result.success(it) }
 
+        // GetTube build-13: every stage below is recorded in a compact trail
+        // (app/yt-dlp versions + per-stage result, reason and duration) that
+        // ends up on the error sheet verbatim — on-device failures are then
+        // diagnosable from a single screenshot instead of guesswork.
+        val trail =
+            StringBuilder("app=").append(appVersionName).append(" ytdlp=").append(ytDlpVersionSafe())
+
         // GetTube build-12: native InnerTube fast path (NewPipeExtractor) —
         // the same mechanism NewPipe-class apps use: direct requests to
         // YouTube's player API, no Python process, no yt-dlp, and no QuickJS
@@ -266,13 +318,29 @@ object DownloadUtil {
         // streams, age-gated videos, extractor breakage) falls through to the
         // pinned yt-dlp chain below.
         if (playlistIndex == null && NewPipeVideoInfoFetcher.isYouTubeVideoUrl(url)) {
-            NewPipeVideoInfoFetcher.fetchVideoInfo(url)
-                .getOrNull()
-                ?.takeIf { !it.first.formats.isNullOrEmpty() }
-                ?.let { (info, rawJson) ->
-                    cacheVideoInfo(url, playlistIndex, info, rawJson)
-                    return Result.success(info)
-                }
+            val nativeStart = System.currentTimeMillis()
+            val nativeResult = NewPipeVideoInfoFetcher.fetchVideoInfoWithDeadline(url)
+            val nativeMs = System.currentTimeMillis() - nativeStart
+            val nativeInfo = nativeResult.getOrNull()
+            if (nativeInfo != null && !nativeInfo.first.formats.isNullOrEmpty()) {
+                trail.append(" | native=OK ").append(nativeMs).append("ms")
+                Log.i(TAG, "fetch trail: $trail")
+                val (info, rawJson) = nativeInfo
+                cacheVideoInfo(url, playlistIndex, info, rawJson)
+                return Result.success(info)
+            }
+            val nativeReason =
+                nativeResult.exceptionOrNull()?.let { ex ->
+                    ex.javaClass.simpleName + ": " + (ex.message?.take(80) ?: "")
+                } ?: "no formats"
+            trail
+                .append(" | native=FAIL(")
+                .append(nativeReason)
+                .append(") ")
+                .append(nativeMs)
+                .append("ms")
+        } else {
+            trail.append(" | native=skip")
         }
 
         with(preferences) {
@@ -327,19 +395,61 @@ object DownloadUtil {
             // If the pinned run fails or returns no formats (e.g. YouTube
             // breakage), fall back to yt-dlp's default client chain — slower
             // on-device, but the battle-tested behavior everything else
-            // already assumes.
-            getVideoInfo(buildRequest(pinClients = true), taskKey)
-                .getOrNull()
-                ?.takeIf { !it.first.formats.isNullOrEmpty() }
-                ?.let { (info, rawJson) ->
-                    cacheVideoInfo(url, playlistIndex, info, rawJson)
-                    return Result.success(info)
-                }
+            // already assumes. build-13: both stages now record their
+            // outcome/reason/duration in the diagnostic trail.
+            val pinnedStart = System.currentTimeMillis()
+            val pinnedResult = getVideoInfo(buildRequest(pinClients = true), taskKey)
+            val pinnedInfo = pinnedResult.getOrNull()
+            if (pinnedInfo != null && !pinnedInfo.first.formats.isNullOrEmpty()) {
+                trail
+                    .append(" | pinned=OK ")
+                    .append(System.currentTimeMillis() - pinnedStart)
+                    .append("ms")
+                Log.i(TAG, "fetch trail: $trail")
+                val (info, rawJson) = pinnedInfo
+                cacheVideoInfo(url, playlistIndex, info, rawJson)
+                return Result.success(info)
+            }
+            trail
+                .append(" | pinned=FAIL(")
+                .append(
+                    pinnedResult.exceptionOrNull()?.let { ex ->
+                        lastErrorLine(ex.message) ?: ex.javaClass.simpleName
+                    } ?: "no formats"
+                )
+                .append(")")
+
+            val defaultStart = System.currentTimeMillis()
             return getVideoInfo(buildRequest(pinClients = false), taskKey)
                 .onSuccess { (info, rawJson) ->
+                    trail
+                        .append(" | default=OK ")
+                        .append(System.currentTimeMillis() - defaultStart)
+                        .append("ms")
+                    Log.i(TAG, "fetch trail: $trail")
                     cacheVideoInfo(url, playlistIndex, info, rawJson)
                 }
                 .map { it.first }
+                .recoverWith { th ->
+                    val reason =
+                        lastErrorLine(th.message)
+                            ?: th.message?.take(120)
+                            ?: "fetch failed"
+                    trail
+                        .append(" | default=FAIL(")
+                        .append(reason)
+                        .append(") ")
+                        .append(System.currentTimeMillis() - defaultStart)
+                        .append("ms")
+                    Log.w(TAG, "fetch trail: $trail")
+                    Result.failure(
+                        FetchDiagnosticsException(
+                            trail = trail.toString(),
+                            message = reason,
+                            cause = th,
+                        )
+                    )
+                }
         }
     }
 
