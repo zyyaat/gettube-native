@@ -87,7 +87,7 @@ object NewPipeVideoInfoFetcher {
         val future = executor.submit(Callable { fetchVideoInfo(url) })
         return try {
             try {
-                Result.success(future.get(deadlineMs, TimeUnit.MILLISECONDS))
+                future.get(deadlineMs, TimeUnit.MILLISECONDS)
             } catch (te: TimeoutException) {
                 future.cancel(true)
                 Result.failure(

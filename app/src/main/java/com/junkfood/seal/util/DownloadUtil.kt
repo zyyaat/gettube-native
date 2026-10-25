@@ -420,17 +420,18 @@ object DownloadUtil {
                 .append(")")
 
             val defaultStart = System.currentTimeMillis()
-            return getVideoInfo(buildRequest(pinClients = false), taskKey)
-                .onSuccess { (info, rawJson) ->
+            val defaultResult = getVideoInfo(buildRequest(pinClients = false), taskKey)
+            return defaultResult.fold(
+                onSuccess = { (info, rawJson) ->
                     trail
                         .append(" | default=OK ")
                         .append(System.currentTimeMillis() - defaultStart)
                         .append("ms")
                     Log.i(TAG, "fetch trail: $trail")
                     cacheVideoInfo(url, playlistIndex, info, rawJson)
-                }
-                .map { it.first }
-                .recoverWith { th ->
+                    Result.success(info)
+                },
+                onFailure = { th ->
                     val reason =
                         lastErrorLine(th.message)
                             ?: th.message?.take(120)
@@ -449,7 +450,8 @@ object DownloadUtil {
                             cause = th,
                         )
                     )
-                }
+                },
+            )
         }
     }
 
