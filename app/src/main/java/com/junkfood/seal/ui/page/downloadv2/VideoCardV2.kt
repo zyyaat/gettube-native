@@ -514,6 +514,22 @@ private fun CardItemStateText(modifier: Modifier = Modifier, downloadState: Task
             style = textStyle,
             color = contentColor,
         )
+        // GetTube build-14: surface the actual failure reason on the card
+        // (e.g. the last yt-dlp ERROR line from the fetch trail) instead of a
+        // bare "Error" label — download failures become readable.
+        (downloadState as? Error)?.throwable?.message
+            ?.takeIf { it.isNotBlank() }
+            ?.let { reason ->
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = reason.take(80),
+                    modifier = Modifier.weight(1f, fill = false),
+                    style = textStyle,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
     }
 }
 

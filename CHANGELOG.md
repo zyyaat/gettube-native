@@ -2,6 +2,31 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.2] - build-14
+
+### Fixed — the in-app updater never worked (root cause of stale installs)
+
+- The update checker was polling **upstream Seal** (`JunkFood02/Seal`) instead
+  of this repository, so GetTube releases never triggered an update prompt —
+  phones stayed on old builds indefinitely, which is why fixes never seemed
+  to land. It now polls `zyyaat/gettube-native`
+- The release name is now `GetTube v1.4.2 (build-14)` — the updater parses
+  the semantic version out of the release name (previous names like
+  "GetTube build-13" parsed as 0.0.0 and could never look "newer")
+- Asset matching fixed: the updater looked for full ABI triples
+  (`arm64-v8a`) in asset filenames, but releases ship short tokens
+  (`GetTube-arm64-rN.apk`) — the lookup silently matched nothing; device ABIs
+  are now mapped to the shipped tokens
+- The auto-update check itself was disabled by default (missing preference
+  default) — now enabled by default so future releases prompt on start
+
+### Improved — readable download errors
+
+- Download task cards now show the actual failure reason next to the error
+  icon (the last actionable yt-dlp ERROR line) instead of a bare "Error"
+- The per-stage fetch diagnostic trail (app/yt-dlp versions + native/pinned/
+  default stage results) is included in download error notifications too
+
 ## [1.4.1] - build-13
 
 ### Added — visible fetch diagnostics on the error sheet

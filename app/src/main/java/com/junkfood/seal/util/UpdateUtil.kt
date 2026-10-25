@@ -31,8 +31,11 @@ import okhttp3.ResponseBody
 
 object UpdateUtil {
 
-    private const val OWNER = "JunkFood02"
-    private const val REPO = "Seal"
+    // GetTube build-14: check OUR fork's releases — this app was silently
+    // polling upstream Seal (JunkFood02/Seal) forever, so in-app update
+    // prompts never surfaced GetTube builds and users stayed on stale APKs.
+    private const val OWNER = "zyyaat"
+    private const val REPO = "gettube-native"
     private const val ARM64 = "arm64-v8a"
     private const val ARM32 = "armeabi-v7a"
     private const val X86 = "x86"
@@ -159,14 +162,25 @@ object UpdateUtil {
             }
 
             val abiList = Build.SUPPORTED_ABIS
-            val preferredArch = abiList.firstOrNull() ?: return@withContext emptyFlow()
-
+            // GetTube build-14: our release assets are named
+            // GetTube-<abi>-rN.apk with SHORT ABI tokens (arm64/arm32/x86/x86_64),
+            // not the full Android ABI triple — map device ABIs to our tokens,
+            // otherwise asset lookup silently matched nothing and the
+            // in-app update download did nothing.
+            val abiTokenMap =
+                mapOf(
+                    "arm64-v8a" to "arm64",
+                    "armeabi-v7a" to "arm32",
+                    "x86_64" to "x86_64",
+                    "x86" to "x86",
+                )
             val targetUrl =
-                release.assets
-                    ?.find {
-                        return@find it.name?.contains(preferredArch) ?: false
-                    }
-                    ?.browserDownloadUrl ?: return@withContext emptyFlow()
+                abiList.firstNotNullOfOrNull { abi ->
+                    val token = abiTokenMap[abi] ?: return@firstNotNullOfOrNull null
+                    release.assets
+                        ?.find { it.name?.contains(token) == true }
+                        ?.browserDownloadUrl
+                } ?: return@withContext emptyFlow()
             val request = Request.Builder().url(targetUrl).build()
             try {
                 val response = client.newCall(request).execute()

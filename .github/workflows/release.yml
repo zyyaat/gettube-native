@@ -34,6 +34,14 @@ jobs:
       - name: Collect and rename APKs (one file per ABI)
         run: |
           mkdir -p dist
+          # GetTube build-14: expose the semantic version so the release NAME
+          # contains "vX.Y.Z" — the in-app updater parses the version from the
+          # release name ("GetTube build-N" alone parses as 0.0.0 and would
+          # never trigger an update prompt).
+          MAJOR=$(grep -oP 'versionMajor = \K\d+' buildSrc/src/main/kotlin/Version.kt | head -1)
+          MINOR=$(grep -oP 'versionMinor = \K\d+' buildSrc/src/main/kotlin/Version.kt | head -1)
+          PATCH=$(grep -oP 'versionPatch = \K\d+' buildSrc/src/main/kotlin/Version.kt | head -1)
+          echo "SEMVER=v${MAJOR}.${MINOR}.${PATCH}" >> "$GITHUB_ENV"
           find app/build/outputs -type f -name '*.apk' | tee /tmp/apks.txt
           while read -r f; do
             low=$(basename "$f" | tr 'A-Z' 'a-z')
@@ -53,10 +61,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
-          name: GetTube ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}
+          name: GetTube ${{ env.SEMVER }} (${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }})
           files: dist/*.apk
           body: |
-            🚀 **GetTube ${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }}** — محرك yt-dlp كامل (مبني على Seal)
+            🚀 **GetTube ${{ env.SEMVER }} (${{ github.ref_type == 'tag' && github.ref_name || format('build-{0}', github.run_number) }})** — محرك yt-dlp كامل (مبني على Seal)
 
             📦 **كل معمارية في ملف منفصل** — اختار الملف المناسب لجهازك:
             - `GetTube-arm64-r*.apk` — الموبايلات الحديثة (الأغلبية — موصى به) ✅

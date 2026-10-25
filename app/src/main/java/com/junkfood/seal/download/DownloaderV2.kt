@@ -21,6 +21,7 @@ import com.junkfood.seal.download.Task.RestartableAction.FetchInfo
 import com.junkfood.seal.download.Task.TypeInfo
 import com.junkfood.seal.util.DownloadUtil
 import com.junkfood.seal.util.FileUtil
+import com.junkfood.seal.util.FetchDiagnosticsException
 import com.junkfood.seal.util.NotificationUtil
 import com.junkfood.seal.util.PreferenceUtil
 import com.junkfood.seal.util.VideoInfo
@@ -271,7 +272,16 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
                             title = viewState.title,
                             textId = R.string.download_error_msg,
                             notificationId = notificationId,
-                            report = throwable.stackTraceToString(),
+                            report =
+                                buildString {
+                                    // GetTube build-14: include the per-stage fetch
+                                    // trail so download-fetch failures are
+                                    // diagnosable from the error report too.
+                                    (throwable as? FetchDiagnosticsException)?.let {
+                                        appendLine(it.trail)
+                                    }
+                                    append(throwable.stackTraceToString())
+                                },
                         )
                     }
             }
@@ -342,7 +352,13 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
                             title = viewState.title,
                             textId = R.string.fetch_info_error_msg,
                             notificationId = notificationId,
-                            report = throwable.stackTraceToString(),
+                            report =
+                                buildString {
+                                    (throwable as? FetchDiagnosticsException)?.let {
+                                        appendLine(it.trail)
+                                    }
+                                    append(throwable.stackTraceToString())
+                                },
                         )
                     }
             }
@@ -432,7 +448,13 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
                             title = viewState.title,
                             textId = R.string.fetch_info_error_msg,
                             notificationId = notificationId,
-                            report = throwable.stackTraceToString(),
+                            report =
+                                buildString {
+                                    (throwable as? FetchDiagnosticsException)?.let {
+                                        appendLine(it.trail)
+                                    }
+                                    append(throwable.stackTraceToString())
+                                },
                         )
                     }
                     .onSuccess {

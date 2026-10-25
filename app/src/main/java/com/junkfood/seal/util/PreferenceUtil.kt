@@ -218,6 +218,9 @@ private val BooleanPreferenceDefaults =
         NOTIFICATION to true,
         EMBED_METADATA to true,
         USE_CUSTOM_AUDIO_PRESET to false,
+        // GetTube build-14: in-app update check must be ON by default — it was
+        // silently false (missing default), so users never got update prompts.
+        AUTO_UPDATE to true,
     )
 
 private val IntPreferenceDefaults =
