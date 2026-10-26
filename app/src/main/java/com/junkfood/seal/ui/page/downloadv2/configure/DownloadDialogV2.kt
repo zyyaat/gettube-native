@@ -1665,7 +1665,10 @@ private fun ClassicSheetError(
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.outline,
-                maxLines = 3,
+                // build-15: full trail must survive a screenshot — the reason
+                // after native=/pinned=/default= is exactly what we need from
+                // the user when the fast paths fail on a given device
+                maxLines = 6,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 6.dp),
             )

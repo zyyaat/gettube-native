@@ -27,6 +27,10 @@ datetime = "0.6.1"
 serialization = "1.7.2"
 okhttp = "5.0.0-alpha.10"
 newpipeExtractor = "v0.26.5"
+# NewPipeExtractor README: minSdk < 33 REQUIRES core library desugaring with
+# the desugar_jdk_libs_nio artifact (backports List.of/Map.of/Set.of,
+# String.isBlank, Optional.or/stream, Objects.requireNonNullElse to API 24+)
+desugarNio = "2.1.5"
 
 room = "2.6.1"
 ksp = "2.0.20-1.0.25"
@@ -72,6 +76,8 @@ androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shape
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 newpipe-extractor = { group = "com.github.TeamNewPipe", name = "NewPipeExtractor", version.ref = "newpipeExtractor" }
+
+android-desugarNio = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.ref = "desugarNio" }
 
 androidx-compose-runtime = { group = "androidx.compose.runtime", name = "runtime" }
 androidx-compose-ui-test = { group = "androidx.compose.ui", name = "ui-test-junit4" }

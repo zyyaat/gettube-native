@@ -28,6 +28,17 @@ val currentVersionCode = currentVersion.code.toInt()
 android {
     compileSdk = 35
 
+    compileOptions {
+        // GetTube build-15 (v1.4.3): NewPipeExtractor (the native InnerTube fast
+        // path) is a JVM library built on Java 11 APIs. Its README mandates core
+        // library desugaring with desugar_jdk_libs_nio for minSdk < 33 — without
+        // it, devices below Android 11 (API 30) crash with NoSuchMethodError on
+        // List.of/String.isBlank/Optional.or inside YoutubeStreamExtractor.
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
     if (keystorePropertiesFile.exists()) {
         val keystoreProperties = Properties()
         keystoreProperties.load(FileInputStream(keystorePropertiesFile))
@@ -185,6 +196,10 @@ dependencies {
 
     // GetTube: native InnerTube fast path for video info (quality sheet)
     implementation(libs.newpipe.extractor)
+
+    // Backport runtime for the desugaring above (j$ classes, incl. the
+    // OpenJDK ImmutableCollections used for List.of/Set.of/Map.of)
+    coreLibraryDesugaring(libs.android.desugarNio)
 
     implementation(libs.bundles.youtubedlAndroid)
 

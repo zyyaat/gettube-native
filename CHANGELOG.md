@@ -2,6 +2,33 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.3] - build-15
+
+### Fixed — the native InnerTube fast path crashed on devices below Android 11
+
+- Root cause, confirmed by the first diagnostic trail ever received from a
+  phone (`app=1.4.2 ... native=FAIL(NoSuchMethodError...)`): NewPipeExtractor
+  is a JVM library built on Java 11 APIs. It calls `List.of` / `Map.of` /
+  `Set.of` / `String.isBlank` / `Optional.or` / `Optional.stream` /
+  `Objects.requireNonNullElse` — and those methods only exist on Android
+  11+ (API 30). On older devices the fast path died instantly with
+  `NoSuchMethodError` before even reaching the network, silently pushing
+  every fetch onto the slow yt-dlp fallback chain (and onto YouTube's
+  bot-check wall)
+- Core library desugaring is now enabled with `desugar_jdk_libs_nio 2.1.5` —
+  the exact requirement documented in the NewPipeExtractor README for any
+  Android project with minSdk below 33 (verified against the desugaring
+  configuration and the library's bundled backport classes). The same
+  mechanism is how NewPipe itself runs this code on Android 5+ devices
+- Why it took so long to see: every previous failure of the fast path was
+  masked by silent fallbacks. The visible per-stage trail shipped in 1.4.1
+  is what surfaced `NoSuchMethodError` in the first place
+
+### Improved — error sheet shows the full diagnostic trail
+
+- The monospace trail under the error message now renders up to 6 lines
+  instead of 3, so a single screenshot shows the complete per-stage reasons
+
 ## [1.4.2] - build-14
 
 ### Fixed — the in-app updater never worked (root cause of stale installs)
