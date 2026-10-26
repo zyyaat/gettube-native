@@ -35,8 +35,10 @@ android {
         // it, devices below Android 11 (API 30) crash with NoSuchMethodError on
         // List.of/String.isBlank/Optional.or inside YoutubeStreamExtractor.
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        // match the Kotlin JVM toolchain (jvmToolchain(21)) — AGP fails the
+        // build with 'Inconsistent JVM-target compatibility' otherwise
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     if (keystorePropertiesFile.exists()) {
