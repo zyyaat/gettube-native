@@ -427,6 +427,12 @@ fun DownloadPageImplV2(
                                             downloadState = state.downloadState,
                                         )
                                     },
+                                    errorContent = {
+                                        (state.downloadState as? Error)?.throwable
+                                            ?.let { throwable ->
+                                                DownloadErrorDetails(throwable = throwable)
+                                            }
+                                    },
                                     onButtonClick = { showActionSheet(task) },
                                 )
                             }
@@ -446,6 +452,14 @@ fun DownloadPageImplV2(
                                         modifier = Modifier.padding(top = 3.dp),
                                         downloadState = state.downloadState,
                                     )
+                                },
+                                errorContent = {
+                                    (state.downloadState as? Error)?.throwable?.let { throwable ->
+                                        DownloadErrorDetails(
+                                            horizontalPadding = 0.dp,
+                                            throwable = throwable,
+                                        )
+                                    }
                                 },
                                 onButtonClick = { showActionSheet(task) },
                             )

@@ -2,6 +2,36 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.5] - build-18
+
+### Fixed — the download bot-check dead end + unreadable error cards
+
+Real-device feedback on 1.4.4 (first build where download failures surface
+instead of spinning): downloads end with YouTube's
+`ERROR: [youtube] <id>: Sign in to confirm you're not a bot`, displayed
+truncated inside the tiny status badge.
+
+- **Readable errors**: the downloads list now renders a dedicated full-width
+  error block on failing cards — the complete yt-dlp error line (no more
+  80-char, single-line truncation) plus the download diagnostic trail
+  (`dl fmt/json/d1/d2/d3`) in small monospace. One screenshot of a failing
+  card now shows the real first cause next to the visible last error.
+- **Plain-language hint**: when the error is YouTube's bot-check, the card
+  shows a short localized explanation (YouTube blocking the network, not the
+  app) with the practical fixes: retry later, update the yt-dlp engine
+  (Settings → General), or sign in with cookies (Settings → Network).
+- **Smarter automatic recovery**: after the cached-JSON download fails, the
+  first recovery attempt now re-extracts with the pinned PO-token-less client
+  chain (`visionos,android_vr,tv_downgraded,mweb,web_embedded` — the client
+  family YouTube's 2025-2026 enforcement wave spares on most networks)
+  instead of jumping straight to the default chain, which is the one the
+  bot-check hits hardest. The default chain remains the last resort; the
+  json-miss path also gains the previously missing second attempt. Every
+  attempt stays bounded (socket-timeout 15, retries 3), so a task can never
+  hang forever. The pinned chain is append-only, so the proven ~4s fetch
+  path is untouched: the first working client still wins, appended clients
+  only run when the earlier ones yield nothing.
+
 ## [1.4.4] - build-17
 
 ### Fixed — downloads stalling forever in a "loading" spinner

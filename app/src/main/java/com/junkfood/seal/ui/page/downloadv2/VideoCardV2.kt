@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -55,8 +56,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.junkfood.seal.R
@@ -75,6 +78,7 @@ import com.junkfood.seal.ui.common.LocalFixedColorRoles
 import com.junkfood.seal.ui.common.motion.materialSharedAxisY
 import com.junkfood.seal.ui.component.GreenTonalPalettes
 import com.junkfood.seal.ui.theme.SealTheme
+import com.junkfood.seal.util.FetchDiagnosticsException
 import com.junkfood.seal.util.toDurationText
 import com.junkfood.seal.util.toFileSizeText
 import kotlinx.coroutines.Job
@@ -94,6 +98,7 @@ fun VideoCardV2(
     viewState: Task.ViewState,
     stateIndicator: @Composable (BoxScope.() -> Unit)? = null,
     actionButton: @Composable (BoxScope.() -> Unit)? = null,
+    errorContent: (@Composable ColumnScope.() -> Unit)? = null,
     onButtonClick: () -> Unit,
 ) {
     with(viewState) {
@@ -106,6 +111,7 @@ fun VideoCardV2(
             fileSizeApprox = fileSizeApprox,
             stateIndicator = stateIndicator,
             actionButton = actionButton,
+            errorContent = errorContent,
             onButtonClick = onButtonClick,
         )
     }
@@ -116,6 +122,7 @@ fun VideoListItem(
     modifier: Modifier = Modifier,
     viewState: Task.ViewState,
     stateIndicator: @Composable (() -> Unit)? = null,
+    errorContent: (@Composable ColumnScope.() -> Unit)? = null,
     onButtonClick: () -> Unit,
 ) {
     with(viewState) {
@@ -127,6 +134,7 @@ fun VideoListItem(
             duration = duration,
             fileSizeApprox = fileSizeApprox,
             stateIndicator = stateIndicator,
+            errorContent = errorContent,
             onButtonClick = onButtonClick,
         )
     }
@@ -141,6 +149,7 @@ fun VideoListItem(
     duration: Int = 0,
     fileSizeApprox: Double = .0,
     stateIndicator: @Composable (() -> Unit)? = null,
+    errorContent: (@Composable ColumnScope.() -> Unit)? = null,
     onButtonClick: () -> Unit,
 ) {
     Row(modifier = modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.Top) {
@@ -162,6 +171,7 @@ fun VideoListItem(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 stateIndicator?.invoke()
+                errorContent?.invoke(this)
             }
             IconButton(
                 onButtonClick,
@@ -229,6 +239,7 @@ fun VideoCardV2(
     fileSizeApprox: Double = .0,
     stateIndicator: @Composable (BoxScope.() -> Unit)? = null,
     actionButton: @Composable (BoxScope.() -> Unit)? = null,
+    errorContent: (@Composable ColumnScope.() -> Unit)? = null,
     onButtonClick: () -> Unit,
 ) {
     val containerColor =
@@ -261,6 +272,12 @@ fun VideoCardV2(
                     )
                 }
             }
+            // GetTube build-18: dedicated full-width error block — the failure
+            // reason used to live only inside the tiny status badge on the
+            // thumbnail (80 chars, single line), which is exactly why errors
+            // read as cut-off gibberish. Full message + diagnostic trail live
+            // here now, readable at a glance.
+            errorContent?.invoke(this)
         }
     }
 }
@@ -530,6 +547,71 @@ private fun CardItemStateText(modifier: Modifier = Modifier, downloadState: Task
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+    }
+}
+
+/**
+ * GetTube build-18: the full, readable failure details for a download task.
+ *
+ * - Known YouTube enforcement errors (the 2025-2026 "Sign in to confirm
+ *   you're not a bot" wave) get a plain-language hint first, because the raw
+ *   yt-dlp line alone reads like the app is broken when it is actually
+ *   YouTube blocking the network.
+ * - The raw error line follows, no 80-char truncation.
+ * - When the engine attached a diagnostic trail (fetch stages or download
+ *   stages d1/d2/d3), it is shown in small monospace so a single screenshot
+ *   of this card is enough to diagnose the failure end to end.
+ */
+@Composable
+fun DownloadErrorDetails(
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 12.dp,
+    throwable: Throwable,
+) {
+    val message = throwable.message?.trim().orEmpty()
+    val isBotCheck = message.contains("Sign in to confirm", ignoreCase = true)
+    val trail = (throwable as? FetchDiagnosticsException)?.trail
+
+    Column(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(start = horizontalPadding, end = horizontalPadding, bottom = 12.dp)
+    ) {
+        if (isBotCheck) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+                shape = MaterialTheme.shapes.extraSmall,
+            ) {
+                Text(
+                    text = stringResource(R.string.download_error_bot_check_hint),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        if (message.isNotEmpty()) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (!trail.isNullOrEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = trail,
+                style =
+                    MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

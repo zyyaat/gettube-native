@@ -182,16 +182,28 @@ object DownloadUtil {
         addOption("--cache-dir", ytdlpCacheDir.absolutePath)
     }
 
-    // GetTube: pin JS-less YouTube player clients so a fetch never enters the
-    // QuickJS signature-challenge path — benchmarked as the dominant cost of
-    // every on-device extraction (10-20s+ even with a warm cache). visionos
-    // is the JS-less default of current yt-dlp releases (47-49 formats incl.
-    // 4K in ~2-4s); on the engine-bundled 2025.11.12 it is unsupported and
-    // skipped, and android_vr serves the same role there (31 formats, full
-    // 4K). yt-dlp silently drops unsupported pins, so this chain is safe
-    // across engine and yt-dlp upgrades.
+    // GetTube: pin JS-less / PO-token-less YouTube player clients so an
+    // extraction never enters the QuickJS signature-challenge path and never
+    // lands on the SABR-gated default `web` client — benchmarked as the
+    // dominant cost of every on-device extraction (10-20s+ even with a warm
+    // cache). visionos is the JS-less default of current yt-dlp releases (47-49
+    // formats incl. 4K in ~2-4s); on the engine-bundled 2025.11.12 it is
+    // unsupported and skipped, and android_vr serves the same role there (31
+    // formats, full 4K).
+    //
+    // GetTube build-18: YouTube's 2025-2026 enforcement wave bot-checks
+    // ("Sign in to confirm you're not a bot") the default client chain
+    // (tv,android_sdkless,web) on many networks, so the chain gains the
+    // community-verified PO-token-less clients behind the fast two:
+    // tv_downgraded (most reliable full-DASH client as of 2026), mweb and
+    // web_embedded. yt-dlp tries the listed clients in order, silently drops
+    // unsupported pins, and stops at the first client that yields formats —
+    // appending strictly adds fallbacks and can never slow a working fetch.
     private fun YoutubeDLRequest.pinFastYoutubeClients() {
-        addOption("--extractor-args", "youtube:player_client=visionos,android_vr")
+        addOption(
+            "--extractor-args",
+            "youtube:player_client=visionos,android_vr,tv_downgraded,mweb,web_embedded",
+        )
     }
 
     const val BASENAME = "%(title).200B"
@@ -974,13 +986,14 @@ object DownloadUtil {
                 )
             }
 
-            // GetTube build-17: buildRequest is callable twice — attempt 1 runs
-            // with the sheet's cached JSON (--load-info-json, zero extraction);
-            // the automatic recovery attempt rebuilds the SAME command WITHOUT
-            // the JSON, so yt-dlp extracts fresh with its own default client
-            // chain (the one proven to work on-device) and the download heals
-            // instead of dead-ending on stale InnerTube URLs.
-            fun buildRequest(useCachedJson: Boolean): YoutubeDLRequest {
+            // GetTube build-17/18: buildRequest is callable per attempt.
+            // Attempt 1 runs with the sheet's cached JSON (--load-info-json,
+            // zero extraction). If that fails, the recovery attempts extract
+            // fresh — first with the pinned PO-token-less client chain, and
+            // only then with yt-dlp's default chain as the last resort (the
+            // default chain is the one YouTube's 2025-2026 bot-check wave
+            // hits hardest: "Sign in to confirm you're not a bot").
+            fun buildRequest(useCachedJson: Boolean, pinClients: Boolean): YoutubeDLRequest {
                 pathBuilder.setLength(0)
                 outputBuilder.setLength(0)
                 return YoutubeDLRequest(url)
@@ -995,12 +1008,11 @@ object DownloadUtil {
                     } else {
                         // No reusable JSON: this run extracts on its own, so skip
                         // the same round-trips the sheet fetch skips as well, and
-                        // pin the same JS-less clients to stay out of the QuickJS
-                        // signature-challenge path (playlists re-extract per entry).
-                        // The JSON-recovery attempt (attempt 2) deliberately runs
-                        // yt-dlp's DEFAULT client chain instead of the pinned one.
-                        val isRecoveryAttempt = usingCachedJson && !useCachedJson
-                        if (!isRecoveryAttempt) pinFastYoutubeClients()
+                        // pin the JS-less/PO-token-less clients to stay out of
+                        // both the QuickJS signature-challenge path and YouTube's
+                        // bot-check on the default chain (playlists re-extract
+                        // per entry).
+                        if (pinClients) pinFastYoutubeClients()
                         addOption("--extractor-args", "youtube:player_skip=webpage,configs")
                     }
                     // GetTube build-17: bound every network wait. Until now the
@@ -1142,109 +1154,117 @@ object DownloadUtil {
                     ?: th.message?.take(120)?.trim()?.takeIf { it.isNotEmpty() }
                     ?: th.javaClass.simpleName
 
-            fun failWithTrail(
-                stage: String,
-                th: Throwable,
-                retried: Boolean,
-            ): Result<List<String>> {
+            // GetTube build-18: every failed attempt is recorded so the final
+            // trail shows the REAL first cause (e.g. the cached-JSON download
+            // being refused by googlevideo) next to the visible last error —
+            // before this, the first failure was invisible to the user.
+            val failureStages = mutableListOf<Pair<String, Throwable>>()
+
+            fun succeed(): Result<List<String>> =
+                onFinishDownloading(
+                    preferences = this,
+                    videoInfo = videoInfo,
+                    downloadPath = pathBuilder.toString(),
+                    sdcardUri = sdcardUri,
+                )
+
+            fun failWithTrail(): Result<List<String>> {
                 val trail =
                     buildString {
                         append("dl fmt=")
                         append(formatIdString.take(48).ifEmpty { "<sorter>" })
                         append(" json=")
                         append(if (usingCachedJson) "hit" else "miss")
-                        append(" | ").append(stage).append("=FAIL(")
-                        append(failureReason(th))
-                        append(") ")
+                        failureStages.forEach { (stage, th) ->
+                            append(" | ").append(stage).append("=FAIL(")
+                            append(failureReason(th))
+                            append(")")
+                        }
+                        append(" ")
                         append(System.currentTimeMillis() - downloadStartMs).append("ms")
-                        if (retried) append(" | retry=default-extract") else append(" | retry=skipped")
+                        append(" | retry=")
+                        append(
+                            if (usingCachedJson) "pinned-extract,default-extract"
+                            else "default-extract"
+                        )
                         lastProgressLine?.let { append(" | last=").append(it.take(60)) }
                     }
                 Log.w(TAG, "download trail: $trail")
+                val lastTh = failureStages.last().second
                 return Result.failure(
                     FetchDiagnosticsException(
                         trail = trail,
-                        message = failureReason(th),
-                        cause = th,
+                        message = failureReason(lastTh),
+                        cause = lastTh,
                     )
                 )
             }
 
-            val firstAttempt = runAttempt(buildRequest(useCachedJson = true))
+            // Attempt 1: cached JSON when available (zero extraction), otherwise
+            // a fresh extraction with the pinned PO-token-less clients — the
+            // exact behavior the sheet fetch trusts.
+            val firstAttempt =
+                runAttempt(buildRequest(useCachedJson = true, pinClients = !usingCachedJson))
             cachedInfoJson?.delete()
 
-            if (firstAttempt.isFailure) {
-                val th = firstAttempt.exceptionOrNull()!!
-                if (th is YoutubeDL.CanceledException) return Result.failure(th)
-                if (
-                    sponsorBlock &&
-                        th.message?.contains("Unable to communicate with SponsorBlock API") ==
-                            true
-                ) {
-                    th.printStackTrace()
-                    return onFinishDownloading(
-                        preferences = this,
-                        videoInfo = videoInfo,
-                        downloadPath = pathBuilder.toString(),
-                        sdcardUri = sdcardUri,
-                    )
-                }
-                if (!usingCachedJson) return failWithTrail(stage = "d1", th = th, retried = false)
+            if (firstAttempt.isSuccess) return succeed()
 
-                // GetTube build-17: one automatic recovery attempt. The cached
-                // JSON (native InnerTube URLs) failed to download — hand the job
-                // to yt-dlp's own fresh extraction with its default client chain
-                // instead of leaving the user with a dead end. Bounded by the
-                // same timeout/retry options, so this can never hang forever.
-                Log.w(
-                    TAG,
-                    "cached-JSON download failed (${failureReason(th)}); retrying with fresh extraction",
-                )
-                val secondAttempt = runAttempt(buildRequest(useCachedJson = false))
-                return secondAttempt.fold(
-                    onSuccess = {
-                        Log.i(
-                            TAG,
-                            "download recovered via fresh extraction in ${System.currentTimeMillis() - downloadStartMs}ms",
-                        )
-                        onFinishDownloading(
-                            preferences = this,
-                            videoInfo = videoInfo,
-                            downloadPath = pathBuilder.toString(),
-                            sdcardUri = sdcardUri,
-                        )
-                    },
-                    onFailure = { th2 ->
-                        if (th2 is YoutubeDL.CanceledException) return Result.failure(th2)
-                        val trail =
-                            buildString {
-                                append("dl fmt=")
-                                append(formatIdString.take(48).ifEmpty { "<sorter>" })
-                                append(" json=hit | d1=FAIL(")
-                                append(failureReason(th))
-                                append(") | d2=FAIL(")
-                                append(failureReason(th2))
-                                append(") ")
-                                append(System.currentTimeMillis() - downloadStartMs)
-                                    .append("ms | retry=default-extract")
-                            }
-                        Log.w(TAG, "download trail: $trail")
-                        Result.failure(
-                            FetchDiagnosticsException(
-                                trail = trail,
-                                message = failureReason(th2),
-                                cause = th2,
-                            )
-                        )
-                    },
+            val firstError = firstAttempt.exceptionOrNull()!!
+            if (firstError is YoutubeDL.CanceledException) return Result.failure(firstError)
+            if (
+                sponsorBlock &&
+                    firstError.message?.contains("Unable to communicate with SponsorBlock API") ==
+                        true
+            ) {
+                firstError.printStackTrace()
+                return onFinishDownloading(
+                    preferences = this,
+                    videoInfo = videoInfo,
+                    downloadPath = pathBuilder.toString(),
+                    sdcardUri = sdcardUri,
                 )
             }
-            return onFinishDownloading(
-                preferences = this,
-                videoInfo = videoInfo,
-                downloadPath = pathBuilder.toString(),
-                sdcardUri = sdcardUri,
-            )
+            failureStages += "d1" to firstError
+
+            // GetTube build-17/18: bounded automatic recovery. The cached JSON
+            // (native InnerTube URLs) can be refused by googlevideo (SABR /
+            // PO-token gating, expired signatures), so hand the job to fresh
+            // yt-dlp extractions: first the pinned JS-less chain — the client
+            // family YouTube's bot-check spares on most networks — and only
+            // then the default chain as the last resort. With no cached JSON,
+            // attempt 1 already ran pinned, so recovery goes straight to the
+            // default chain. Every attempt is bounded by the timeout/retry
+            // options in buildRequest, so this can never hang forever.
+            val recoveryRequests =
+                if (usingCachedJson) {
+                    listOf(
+                        buildRequest(useCachedJson = false, pinClients = true),
+                        buildRequest(useCachedJson = false, pinClients = false),
+                    )
+                } else {
+                    listOf(buildRequest(useCachedJson = false, pinClients = false))
+                }
+            val recoveryStages = if (usingCachedJson) listOf("d2", "d3") else listOf("d2")
+
+            recoveryRequests.forEachIndexed { index, request ->
+                Log.w(
+                    TAG,
+                    "download ${recoveryStages[index]} after ${failureStages.joinToString { "(${it.first}) ${failureReason(it.second)}" }}",
+                )
+                val attempt = runAttempt(request)
+                if (attempt.isSuccess) {
+                    Log.i(
+                        TAG,
+                        "download recovered via fresh extraction in ${System.currentTimeMillis() - downloadStartMs}ms",
+                    )
+                    return succeed()
+                }
+                val th = attempt.exceptionOrNull()!!
+                if (th is YoutubeDL.CanceledException) return Result.failure(th)
+                failureStages += recoveryStages[index] to th
+            }
+
+            return failWithTrail()
         }
     }
 

@@ -375,6 +375,7 @@
     <string name="merge_audiostream_desc">السماح بدمج بث صوتي متعدد في ملف واحد</string>
     <string name="keep_subtitle_files">حفظ ملفات الترجمة</string>
     <string name="download_archive_error">تم تحميل الفيديو. إذا لم يكن هذا هو السلوك المتوقع، يرجى التحقق من أرشيف التحميل الخاص بك.</string>
+    <string name="download_error_bot_check_hint">يوتيوب بيحجب التنزيل من شبكتك مؤقتاً (&quot;Sign in to confirm you&apos;re not a bot&quot;). جرّب تاني بعد شوية، أو حدّث محرك yt-dlp (الإعدادات ← عام ← تحديث yt-dlp). تسجيل الدخول بالكوكيز (الإعدادات ← الشبكة) هو الحل الأضمن.</string>
     <string name="full_backup">حفظ احتياطي كامل</string>
     <string name="backup_type">نوع الحفظ الاحتياطي</string>
     <string name="file">ملف</string>
