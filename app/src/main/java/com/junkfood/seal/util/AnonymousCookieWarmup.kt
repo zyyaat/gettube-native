@@ -10,6 +10,12 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.junkfood.seal.App
+import com.junkfood.seal.util.DownloadUtil.toCookiesFileContent
+import com.junkfood.seal.util.FileUtil.getCookiesFile
+import com.junkfood.seal.util.PreferenceUtil.getBoolean
+import com.junkfood.seal.util.PreferenceUtil.getLong
+import com.junkfood.seal.util.PreferenceUtil.updateBoolean
+import com.junkfood.seal.util.PreferenceUtil.updateLong
 
 /**
  * GetTube build-20: SnapTube-style zero-setup session warming.
