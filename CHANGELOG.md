@@ -2,6 +2,34 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.7] - build-20
+
+### Added — zero-setup anonymous cookies (SnapTube-style, NO login) + faster recovery
+
+User verdict on 1.4.6's login-first flow: "I don't want to sign in — SnapTube
+never asks me to. Make cookies automatic with no setup." Done exactly that.
+
+- **Automatic anonymous session**: once every 24h an invisible, never-attached
+  WebView quietly visits youtube.com in the background (like a browser tab),
+  lets YouTube issue its ANONYMOUS visitor cookies (VISITOR_INFO1_LIVE, YSC,
+  SOCS — no account involved, nothing to log into), then exports cookies.txt
+  and enables the COOKIES preference automatically. yt-dlp requests carrying
+  them are treated as returning visitors instead of anonymous bots. Zero UI,
+  zero settings, zero login — the user sees nothing.
+- **Native fast-path circuit breaker**: when YouTube tarpits the native
+  InnerTube request to the full 12s deadline (the on-device v1.4.5 trail),
+  the native stage is skipped for the next 10 minutes and fetches go
+  straight to the cookie-carrying yt-dlp stages — no more paying the dead
+  12 seconds on every attempt. Only a genuine timeout arms the breaker; the
+  first native success clears it, so the healthy ~4s path is unchanged.
+- **Honest bot-check card**: the error card now explains the automatic
+  anonymous session, leads with the zero-setup fix ("toggle airplane mode
+  for 5 seconds — a fresh IP almost always clears this instantly"), and
+  keeps the cookie login as the clearly-labeled guaranteed fallback.
+- **Fixed build-19's compile error** (release never shipped): the
+  ConfigurePage preview passed its trailing lambda positionally, which
+  after the parameter addition bound to the wrong parameter — now explicit.
+
 ## [1.4.6] - build-19
 
 ### Fixed — the 35-second fetch failure + the error nobody could read or act on

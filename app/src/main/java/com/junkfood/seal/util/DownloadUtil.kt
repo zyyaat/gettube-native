@@ -31,9 +31,11 @@ import com.junkfood.seal.util.FileUtil.getSdcardTempDir
 import com.junkfood.seal.util.FileUtil.moveFilesToSdcard
 import com.junkfood.seal.util.PreferenceUtil.COOKIE_HEADER
 import com.junkfood.seal.util.PreferenceUtil.getBoolean
+import com.junkfood.seal.util.PreferenceUtil.getLong
 import com.junkfood.seal.util.PreferenceUtil.getInt
 import com.junkfood.seal.util.PreferenceUtil.getString
 import com.junkfood.seal.util.PreferenceUtil.updateBoolean
+import com.junkfood.seal.util.PreferenceUtil.updateLong
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -80,6 +82,12 @@ object DownloadUtil {
     private val jsonFormat = Json { ignoreUnknownKeys = true }
 
     private const val TAG = "DownloadUtil"
+
+    // GetTube build-20: native fast-path circuit breaker — after one native
+    // tarpit timeout, skip the native stage for this long (the anonymous
+    // cookie session + yt-dlp stages take over meanwhile).
+    private const val NATIVE_TIMEOUT_AT = "gettube_native_timeout_at"
+    private const val NATIVE_COOLDOWN_MS = 10 * 60 * 1000L
 
     private val appVersionName: String by lazy {
         runCatching {
@@ -343,12 +351,26 @@ object DownloadUtil {
         // --load-info-json download path works unchanged. Any failure (live
         // streams, age-gated videos, extractor breakage) falls through to the
         // pinned yt-dlp chain below.
-        if (playlistIndex == null && NewPipeVideoInfoFetcher.isYouTubeVideoUrl(url)) {
+        // GetTube build-20: when YouTube tarpits the native InnerTube request
+        // (the on-device v1.4.5 trail showed it hanging to the full 12s
+        // deadline on a bot-flagged IP), remember it for 10 minutes and go
+        // straight to the cookie-carrying yt-dlp stages on the next fetches
+        // instead of re-paying the dead 12s every time. Only a real timeout
+        // triggers the cooldown — quick native failures keep falling through
+        // instantly, and the first native success clears it, so the healthy
+        // ~4s fast path is byte-for-byte identical when YouTube is friendly.
+        if (
+            playlistIndex == null &&
+                NewPipeVideoInfoFetcher.isYouTubeVideoUrl(url) &&
+                System.currentTimeMillis() - NATIVE_TIMEOUT_AT.getLong(0L) >=
+                    NATIVE_COOLDOWN_MS
+        ) {
             val nativeStart = System.currentTimeMillis()
             val nativeResult = NewPipeVideoInfoFetcher.fetchVideoInfoWithDeadline(url)
             val nativeMs = System.currentTimeMillis() - nativeStart
             val nativeInfo = nativeResult.getOrNull()
             if (nativeInfo != null && !nativeInfo.first.formats.isNullOrEmpty()) {
+                NATIVE_TIMEOUT_AT.updateLong(0L)
                 trail.append(" | native=OK ").append(nativeMs).append("ms")
                 Log.i(TAG, "fetch trail: $trail")
                 val (info, rawJson) = nativeInfo
@@ -365,6 +387,13 @@ object DownloadUtil {
                 .append(") ")
                 .append(nativeMs)
                 .append("ms")
+            if (nativeResult.exceptionOrNull()?.message?.contains("timed out") == true) {
+                NATIVE_TIMEOUT_AT.updateLong(System.currentTimeMillis())
+            }
+        } else if (
+            playlistIndex == null && NewPipeVideoInfoFetcher.isYouTubeVideoUrl(url)
+        ) {
+            trail.append(" | native=skip(cooldown)")
         } else {
             trail.append(" | native=skip")
         }

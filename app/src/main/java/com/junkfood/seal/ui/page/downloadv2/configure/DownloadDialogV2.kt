@@ -545,7 +545,8 @@ private fun ConfigurePagePreview() {
                 preferences = PreferencesMock,
                 onConfigSave = {},
                 settingChips = {},
-            ) {}
+                onActionPost = {},
+            )
         }
     }
 }
@@ -1698,6 +1699,15 @@ private fun ClassicSheetError(
                 color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                // build-20: the zero-setup fix most users actually need —
+                // a fresh IP clears a temporary flag instantly, no login.
+                text = stringResource(R.string.quality_sheet_bot_check_ip_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 6.dp),
             )
         } else {
             Text(

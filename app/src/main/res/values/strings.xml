@@ -484,8 +484,9 @@
     <string name="quality_sheet_error_body">Check the link and try again.</string>
     <string name="quality_sheet_fallback">Download with saved settings</string>
     <string name="quality_sheet_bot_check_title">YouTube wants to verify it\'s really you</string>
-    <string name="quality_sheet_bot_check_body">YouTube flagged the current network and refuses anonymous requests — this is YouTube\'s protection, not a broken app. Sign in to your YouTube account once from inside the app (cookies) and everything will work again.</string>
-    <string name="quality_sheet_bot_check_login">Sign in with cookies</string>
+    <string name="quality_sheet_bot_check_body">YouTube temporarily flagged your current network and refuses anonymous requests — that\'s YouTube\'s protection, not a broken app. The app silently refreshes an anonymous session on its own (cookies with NO account, like any browser visit), and this usually passes by itself.</string>
+    <string name="quality_sheet_bot_check_ip_hint">Fastest fix right now: toggle airplane mode for 5 seconds and try again — a fresh IP almost always clears this instantly.</string>
+    <string name="quality_sheet_bot_check_login">Sign in with cookies (guaranteed fix)</string>
     <string name="quality_sheet_bot_check_after_login">After signing in, go back to the video and tap Retry.</string>
     <string name="quality_sheet_bot_check_cookies_active">Cookies are enabled, but YouTube still refuses them — they have most likely expired. Clear them on the cookies page and sign in again.</string>
     <string name="playlist_sheet_subtitle">Playlist — every video will be downloaded</string>

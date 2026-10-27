@@ -23,6 +23,7 @@ import com.junkfood.seal.ui.page.settings.directory.Directory
 import com.junkfood.seal.ui.page.settings.network.CookiesViewModel
 import com.junkfood.seal.ui.page.videolist.VideoListViewModel
 import com.junkfood.seal.util.AUDIO_DIRECTORY
+import com.junkfood.seal.util.AnonymousCookieWarmup
 import com.junkfood.seal.util.COMMAND_DIRECTORY
 import com.junkfood.seal.util.DownloadUtil
 import com.junkfood.seal.util.FileUtil
@@ -95,6 +96,11 @@ class App : Application() {
                 DownloadUtil.getCookiesContentFromDatabase().getOrNull()?.let {
                     FileUtil.writeContentToFile(it, getCookiesFile())
                 }
+                // GetTube build-20: SnapTube-style zero-setup anonymous
+                // cookies — a headless WebView quietly establishes YouTube's
+                // visitor session every 24h (no account, no settings) so the
+                // bot-check has nothing anonymous to refuse.
+                AnonymousCookieWarmup.warmUpIfNeeded()
                 UpdateUtil.deleteOutdatedApk()
             } catch (th: Throwable) {
                 withContext(Dispatchers.Main) { startCrashReportActivity(th) }

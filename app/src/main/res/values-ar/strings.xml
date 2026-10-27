@@ -485,8 +485,9 @@
     <string name="quality_sheet_error_body">تأكد من الرابط وحاول مرة أخرى.</string>
     <string name="quality_sheet_fallback">تنزيل بالإعدادات المحفوظة</string>
     <string name="quality_sheet_bot_check_title">يوتيوب عايز يتأكد إنك مش بوت</string>
-    <string name="quality_sheet_bot_check_body">يوتيوب علّم الشبكة الحالية وبيرفض الطلبات بدون حساب — دي حماية من يوتيوب نفسه، مش عطل في التطبيق. سجّل دخولك لحساب يوتيوب مرة واحدة من جوه التطبيق (الكوكيز) وكل حاجة هترجع تشتغل.</string>
-    <string name="quality_sheet_bot_check_login">تسجيل الدخول بالكوكيز</string>
+    <string name="quality_sheet_bot_check_body">يوتيوب علّم شبكتك الحالية مؤقتًا وبيرفض الطلبات المجهولة — دي حماية من يوتيوب نفسه، مش عطل في التطبيق. التطبيق بيجدّد جلسة مجهولة لوحده تلقائيًا (كوكيز من غير أي حساب زي أي متصفح)، وغالبًا الموضوع بيعدي لوحده.</string>
+    <string name="quality_sheet_bot_check_ip_hint">أسرع حل فوري: شغّل وضع الطيران ٥ ثواني وجرّب تاني — IP جديد بيحل الموضوع فورًا في الأغلب.</string>
+    <string name="quality_sheet_bot_check_login">تسجيل الدخول بالكوكيز (الحل المضمون)</string>
     <string name="quality_sheet_bot_check_after_login">بعد ما تسجّل الدخول، ارجع للفيديو ودوس إعادة المحاولة.</string>
     <string name="quality_sheet_bot_check_cookies_active">الكوكيز مفعّلة بس يوتيوب لسه بيرفضها — غالبًا انتهت صلاحيتها. امسحها من صفحة الكوكيز وسجّل الدخول من جديد.</string>
     <string name="playlist_sheet_subtitle">قائمة تشغيل — سيتم تنزيل كل المقاطع</string>
