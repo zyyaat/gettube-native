@@ -59,6 +59,11 @@ class FetchDiagnosticsException(
     val trail: String,
     message: String,
     cause: Throwable? = null,
+    // GetTube build-19: true when the failure is YouTube's IP-level
+    // "Sign in to confirm you're not a bot" enforcement — the error UI
+    // turns this case into a dedicated cookies-login card instead of
+    // raw yt-dlp output.
+    val botCheck: Boolean = false,
 ) : RuntimeException(message, cause)
 
 object DownloadUtil {
@@ -98,6 +103,15 @@ object DownloadUtil {
             ?: "?"
 
     /** The last actionable yt-dlp "ERROR:" line from a stderr dump. */
+    // GetTube build-19: YouTube's anti-bot enforcement phrase, matched
+    // against the last yt-dlp ERROR line. Apostrophe-agnostic (yt-dlp uses
+    // U+2019 in "you're") — "not a bot" is the stable, unambiguous fragment.
+    private fun isYouTubeBotCheck(message: String?): Boolean {
+        if (message.isNullOrEmpty()) return false
+        val lower = message.lowercase()
+        return "not a bot" in lower || "sign in to confirm" in lower
+    }
+
     private fun lastErrorLine(raw: String?): String? =
         raw
             ?.lineSequence()
@@ -431,6 +445,30 @@ object DownloadUtil {
                 )
                 .append(")")
 
+            // GetTube build-19: a bot-check is IP-level enforcement — yt-dlp's
+            // maintainers' documented position, and exactly what the on-device
+            // trail in v1.4.5 showed (all five pinned PO-token-less clients
+            // rejected, default chain rejected seconds later). Re-running the
+            // default chain on the same IP cannot succeed, so fail now with the
+            // cookies guidance instead of burning another ~10-15s of wait.
+            // With cookies enabled this branch is never reached (the request
+            // would have authenticated), so the healthy fast path is untouched.
+            if (isYouTubeBotCheck(pinnedResult.exceptionOrNull()?.message)) {
+                trail.append(" | default=skip(bot-check)")
+                val reason =
+                    lastErrorLine(pinnedResult.exceptionOrNull()?.message)
+                        ?: "Sign in to confirm you're not a bot"
+                Log.w(TAG, "fetch trail: $trail")
+                return Result.failure(
+                    FetchDiagnosticsException(
+                        trail = trail.toString(),
+                        message = reason,
+                        cause = pinnedResult.exceptionOrNull(),
+                        botCheck = true,
+                    )
+                )
+            }
+
             val defaultStart = System.currentTimeMillis()
             val defaultResult = getVideoInfo(buildRequest(pinClients = false), taskKey)
             return defaultResult.fold(
@@ -460,6 +498,7 @@ object DownloadUtil {
                             trail = trail.toString(),
                             message = reason,
                             cause = th,
+                            botCheck = isYouTubeBotCheck(reason) || isYouTubeBotCheck(th.message),
                         )
                     )
                 },

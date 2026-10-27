@@ -483,6 +483,11 @@
     <string name="quality_sheet_error_title">Couldn\'t load video info</string>
     <string name="quality_sheet_error_body">Check the link and try again.</string>
     <string name="quality_sheet_fallback">Download with saved settings</string>
+    <string name="quality_sheet_bot_check_title">YouTube wants to verify it\'s really you</string>
+    <string name="quality_sheet_bot_check_body">YouTube flagged the current network and refuses anonymous requests — this is YouTube\'s protection, not a broken app. Sign in to your YouTube account once from inside the app (cookies) and everything will work again.</string>
+    <string name="quality_sheet_bot_check_login">Sign in with cookies</string>
+    <string name="quality_sheet_bot_check_after_login">After signing in, go back to the video and tap Retry.</string>
+    <string name="quality_sheet_bot_check_cookies_active">Cookies are enabled, but YouTube still refuses them — they have most likely expired. Clear them on the cookies page and sign in again.</string>
     <string name="playlist_sheet_subtitle">Playlist — every video will be downloaded</string>
     <string name="playlist_download_all">Download entire playlist</string>
 </resources>

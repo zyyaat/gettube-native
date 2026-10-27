@@ -21,7 +21,12 @@ import kotlinx.coroutines.launch
  * exactly like the quality sheet did in the original GetTube app.
  */
 @Composable
-fun DownloadDialogHost(viewModel: DownloadDialogViewModel) {
+fun DownloadDialogHost(
+    viewModel: DownloadDialogViewModel,
+    // GetTube build-19: one-tap escape hatch from the bot-check error card
+    // straight to the in-app cookies login page.
+    onNavigateToCookies: () -> Unit = {},
+) {
 
     var preferences by remember {
         mutableStateOf(DownloadUtil.DownloadPreferences.createFromPreferences())
@@ -50,6 +55,7 @@ fun DownloadDialogHost(viewModel: DownloadDialogViewModel) {
             preferences = preferences,
             onPreferencesUpdate = { preferences = it },
             onActionPost = { viewModel.postAction(it) },
+            onNavigateToCookies = onNavigateToCookies,
         )
     }
 

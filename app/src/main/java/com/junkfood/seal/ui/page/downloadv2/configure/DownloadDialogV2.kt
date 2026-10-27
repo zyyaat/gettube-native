@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.Cookie
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -116,6 +117,7 @@ import coil.compose.AsyncImage
 import com.junkfood.seal.App
 import com.junkfood.seal.R
 import com.junkfood.seal.ui.common.HapticFeedback.longPressHapticFeedback
+import com.junkfood.seal.ui.common.booleanState
 import com.junkfood.seal.ui.common.motion.materialSharedAxisX
 import com.junkfood.seal.ui.component.ButtonChip
 import com.junkfood.seal.ui.component.DrawerSheetSubtitle
@@ -227,6 +229,7 @@ fun DownloadDialog(
     onPreferencesUpdate: (DownloadUtil.DownloadPreferences) -> Unit,
     state: DownloadDialogViewModel.SheetState = InputUrl,
     onActionPost: (Action) -> Unit = {},
+    onNavigateToCookies: () -> Unit = {},
 ) {
     var showVideoPresetDialog by remember { mutableStateOf(false) }
     var showAudioPresetDialog by remember { mutableStateOf(false) }
@@ -252,6 +255,7 @@ fun DownloadDialog(
                 }
             },
             onActionPost = onActionPost,
+            onNavigateToCookies = onNavigateToCookies,
         )
     }
 
@@ -374,6 +378,7 @@ private fun DownloadDialogContent(
     onPreferencesUpdate: (DownloadUtil.DownloadPreferences) -> Unit,
     onPresetEdit: (DownloadType?) -> Unit,
     onActionPost: (Action) -> Unit,
+    onNavigateToCookies: () -> Unit = {},
 ) {
     AnimatedContent(
         modifier = modifier,
@@ -409,6 +414,7 @@ private fun DownloadDialogContent(
                             )
                         },
                         onActionPost = { onActionPost(it) },
+                        onNavigateToCookies = onNavigateToCookies,
                     )
                 } else {
                     ConfigurePagePlaylistVariant(
@@ -748,6 +754,7 @@ private fun ConfigurePage(
     onPresetEdit: (DownloadType?) -> Unit = {},
     onConfigSave: (Config) -> Unit,
     onActionPost: (Action) -> Unit,
+    onNavigateToCookies: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     var selectedType by remember(config) { mutableStateOf(config.downloadType) }
@@ -875,6 +882,7 @@ private fun ConfigurePage(
                             throwable = null,
                             onRetry = { retryCount++ },
                             onFallback = startPresetDownload,
+                            onNavigateToCookies = onNavigateToCookies,
                         )
                 }
             }
@@ -885,6 +893,7 @@ private fun ConfigurePage(
                     diagnostics = info.diagnostics,
                     onRetry = { retryCount++ },
                     onFallback = startPresetDownload,
+                    onNavigateToCookies = onNavigateToCookies,
                 )
         }
         return
@@ -1630,47 +1639,90 @@ private fun ClassicSheetLoading(modifier: Modifier = Modifier) {
 @Composable
 private fun ClassicSheetError(
     modifier: Modifier = Modifier,
-    throwable: Throwable?,
+    throwable: Throwable? = null,
     diagnostics: String? = null,
     onRetry: () -> Unit,
     onFallback: () -> Unit,
+    onNavigateToCookies: () -> Unit = {},
 ) {
+    // GetTube build-19: YouTube's IP-level "Sign in to confirm you're not a
+    // bot" enforcement gets a first-class card — plain-Arabic explanation and
+    // a one-tap shortcut to the in-app cookies login — instead of raw yt-dlp
+    // output the user cannot act on.
+    val isBotCheck = (throwable as? FetchDiagnosticsException)?.botCheck == true
+    val cookiesEnabled by COOKIES.booleanState
+
     Column(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 48.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 36.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            imageVector = Icons.Outlined.ErrorOutline,
+            imageVector =
+                if (isBotCheck) Icons.Outlined.Cookie else Icons.Outlined.ErrorOutline,
             contentDescription = null,
             modifier = Modifier.size(44.dp),
             tint = MaterialTheme.colorScheme.error,
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = stringResource(R.string.quality_sheet_error_title),
+            text =
+                if (isBotCheck) stringResource(R.string.quality_sheet_bot_check_title)
+                else stringResource(R.string.quality_sheet_error_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
         )
-        Text(
-            text = throwable?.message ?: stringResource(R.string.quality_sheet_error_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp),
-        )
+        if (isBotCheck) {
+            Text(
+                text = stringResource(R.string.quality_sheet_bot_check_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Button(
+                onClick = onNavigateToCookies,
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Outlined.Cookie, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.quality_sheet_bot_check_login))
+            }
+            Text(
+                text =
+                    if (cookiesEnabled)
+                        stringResource(R.string.quality_sheet_bot_check_cookies_active)
+                    else stringResource(R.string.quality_sheet_bot_check_after_login),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else {
+            Text(
+                text = throwable?.message ?: stringResource(R.string.quality_sheet_error_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         if (!diagnostics.isNullOrBlank()) {
             Text(
                 text = diagnostics,
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.outline,
-                // build-15: full trail must survive a screenshot — the reason
-                // after native=/pinned=/default= is exactly what we need from
-                // the user when the fast paths fail on a given device
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp),
+                // build-19: the full trail must remain readable — scrolled in
+                // its own bounded box instead of hard-ellipsized after 6 lines
+                // (the v1.4.5 screenshot showed the default stage cut off).
+                modifier =
+                    Modifier.padding(top = 10.dp)
+                        .fillMaxWidth()
+                        .heightIn(max = 120.dp)
+                        .verticalScroll(rememberScrollState()),
             )
         }
         Spacer(Modifier.height(20.dp))

@@ -137,6 +137,16 @@ fun CookieProfilePage(
             DownloadUtil.getCookieListFromDatabase().getOrNull()?.let {
                 cookieList = it
                 FileUtil.writeContentToFile(it.toCookiesFileContent(), context.getCookiesFile())
+                // GetTube build-19: freshly exported cookies are useless while
+                // the COOKIES switch stays off — enable it automatically so the
+                // bot-check recovery flow (error card -> this page -> login)
+                // works with no hidden extra step.
+                if (it.isNotEmpty() && !COOKIES.getBoolean()) {
+                    withContext(Dispatchers.Main) {
+                        COOKIES.updateBoolean(true)
+                        isCookieEnabled = true
+                    }
+                }
             }
         }
         onDispose { shouldUpdateCookies = false }

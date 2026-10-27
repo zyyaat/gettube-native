@@ -160,7 +160,15 @@ fun AppEntry(dialogViewModel: DownloadDialogViewModel) {
         }
 
         // The download sheet lives ABOVE every tab, like the old app's quality sheet.
-        DownloadDialogHost(dialogViewModel)
+        DownloadDialogHost(
+            dialogViewModel,
+            onNavigateToCookies = {
+                // bot-check escape hatch: close the sheet, then open cookies
+                // settings where the user can log into YouTube in one place.
+                dialogViewModel.postAction(DownloadDialogViewModel.Action.HideSheet)
+                navController.navigate(route = Route.COOKIE_PROFILE) { launchSingleTop = true }
+            },
+        )
 
         AppUpdater()
         YtdlpUpdater()

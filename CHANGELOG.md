@@ -2,6 +2,36 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.6] - build-19
+
+### Fixed — the 35-second fetch failure + the error nobody could read or act on
+
+Real-device trail on 1.4.5 (`native=FAIL(timeout 12000ms) 12002ms |
+pinned=FAIL(Sign in to confirm you're not a bot) | default=FAIL(same)`)
+showed the full picture: YouTube had IP-flagged the phone's network, so the
+native InnerTube request hung until the hard deadline, and both yt-dlp
+stages were rejected — ~35s of silent waiting before a raw English error
+the user could neither read nor act on.
+
+- **No more doomed stage**: when the pinned client chain fails with the
+  bot-check, the default chain is skipped (`default=skip(bot-check)` in the
+  trail) — a bot-check is IP-level enforcement per yt-dlp's maintainers, so
+  re-running more anonymous clients on the same IP cannot succeed. Failure
+  wait drops from ~35s to ~22s. With cookies enabled the branch is never
+  reached, so the healthy ~4s fetch path is untouched.
+- **A card you can act on**: the bot-check now gets a dedicated error card —
+  plain-Arabic explanation ("YouTube flagged this network, not a broken
+  app"), a one-tap **"تسجيل الدخول بالكوكيز"** button that closes the sheet
+  and opens the in-app cookies login page, and a context hint (retry after
+  login, or clear expired cookies and re-login if cookies were already on).
+- **Auto-enable after login**: exporting valid cookies now turns the COOKIES
+  preference on automatically — no hidden second toggle left to discover.
+- **Readable diagnostics again**: the fetch trail renders in its own
+  scrollable box instead of being hard-ellipsized after 6 lines (the
+  v1.4.5 screenshot cut off mid-sentence and hid the default stage result).
+- The download engine, quality sheet, cache, and the proven native→pinned
+  fetch chain are untouched otherwise.
+
 ## [1.4.5] - build-18
 
 ### Fixed — the download bot-check dead end + unreadable error cards
