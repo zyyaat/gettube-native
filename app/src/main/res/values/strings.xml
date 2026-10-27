@@ -484,4 +484,13 @@
     <string name="quality_sheet_fallback">Download with saved settings</string>
     <string name="playlist_sheet_subtitle">Playlist — every video will be downloaded</string>
     <string name="playlist_download_all">Download entire playlist</string>
+    <string name="quick_sheet_title">Quick download</string>
+    <string name="quick_sheet_subtitle">Ready-made qualities that start immediately — or open the full list</string>
+    <string name="quick_badge_instant">Instant</string>
+    <string name="quick_video_title">MP4 360p</string>
+    <string name="quick_video_desc">Video + audio in one file — no merging, no processing</string>
+    <string name="quick_audio_title">Audio only — M4A</string>
+    <string name="quick_audio_desc">Standard 128k quality — plays everywhere</string>
+    <string name="quick_show_all">Show all qualities…</string>
+    <string name="quick_show_all_desc">480p up to 4K — takes a few seconds</string>
 </resources>

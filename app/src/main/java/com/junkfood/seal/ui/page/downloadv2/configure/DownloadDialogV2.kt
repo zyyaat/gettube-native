@@ -158,6 +158,7 @@ import com.junkfood.seal.util.DownloadUtil
 import com.junkfood.seal.util.FetchDiagnosticsException
 import com.junkfood.seal.util.Format
 import com.junkfood.seal.util.FORMAT_SELECTION
+import com.junkfood.seal.util.NewPipeVideoInfoFetcher
 import com.junkfood.seal.util.PreferenceStrings
 import com.junkfood.seal.util.PreferenceUtil
 import com.junkfood.seal.util.PreferenceUtil.getBoolean
@@ -546,7 +547,18 @@ private fun ConfigurePagePreview() {
 
 private const val INFO_TASK_KEY = "SheetInfo"
 
+// GetTube build-16: instant quick-download format selectors. No metadata
+// fetch is needed to *choose* these — itag 18 (360p H264+AAC progressive
+// MP4) and itag 140 (128k AAC) exist on virtually every public YouTube
+// video, so the sheet can offer them before any network round-trip;
+// yt-dlp resolves the exact media URL during the download itself.
+private const val QUICK_VIDEO_FORMAT = "18/b[height<=360]"
+private const val QUICK_AUDIO_FORMAT = "140/ba[acodec^=mp4a]/ba"
+
 private sealed interface SheetInfoState {
+    // build-16: opening state — instant, zero-network quick options.
+    data object Quick : SheetInfoState
+
     data object Loading : SheetInfoState
 
     data class Done(val info: VideoInfo) : SheetInfoState
@@ -762,17 +774,29 @@ private fun ConfigurePage(
             mutableStateOf(PreferenceUtil.getTemplate())
         }
 
-    // GetTube flow: the sheet only ever shows GetTube-styled states — a loading
-    // state while the real formats are fetched, the classic quality list once
-    // they arrive, a playlist card for playlist links and an error card with
-    // retry otherwise. The legacy preset UI below is kept ONLY for the
-    // custom-command flow, matching the original Flutter app exactly.
-    var infoState by remember(url) { mutableStateOf<SheetInfoState>(SheetInfoState.Loading) }
+    // GetTube flow: the sheet only ever shows GetTube-styled states — instant
+    // quick options first (build-16: zero network to display them), the
+    // classic quality list once the full fetch is requested, a playlist card
+    // for playlist links and an error card with retry otherwise. The legacy
+    // preset UI below is kept ONLY for the custom-command flow.
+    var infoState by remember(url) { mutableStateOf<SheetInfoState>(SheetInfoState.Quick) }
     var retryCount by remember(url) { mutableIntStateOf(0) }
 
+    // The quick stage applies to single YouTube videos only: canonical
+    // playlist links (…/playlist?list=…) and non-YouTube URLs skip it and
+    // fetch the full list immediately, exactly like previous builds. Watch
+    // URLs that merely carry a &list=… stay in the quick stage because every
+    // request pins the video with --no-playlist anyway.
+    val quickStageEligible =
+        remember(url) {
+            NewPipeVideoInfoFetcher.isYouTubeVideoUrl(url) &&
+                !url.substringBefore('?').endsWith("/playlist")
+        }
+    var fullListRequested by remember(url) { mutableStateOf(!quickStageEligible) }
+
     val isCommandFlow = selectedType == Command
-    LaunchedEffect(url, isCommandFlow, retryCount) {
-        if (isCommandFlow) return@LaunchedEffect
+    LaunchedEffect(url, isCommandFlow, fullListRequested, retryCount) {
+        if (isCommandFlow || !fullListRequested) return@LaunchedEffect
         infoState = SheetInfoState.Loading
         val result =
             withContext(Dispatchers.IO) {
@@ -810,8 +834,38 @@ private fun ConfigurePage(
         )
     }
 
+    // GetTube build-16: instant quick downloads. Tapping a quick row enqueues
+    // the task right away (the sheet closes and the download card appears
+    // immediately); the task reuses the info cache when the full list was
+    // fetched before, and yt-dlp resolves the media URL itself otherwise.
+    val startQuickDownload: (Boolean) -> Unit = { asVideo ->
+        onConfigSave(
+            config.copy(
+                useFormatSelection = false,
+                downloadType = if (asVideo) Video else Audio,
+            )
+        )
+        onActionPost(
+            Action.DownloadWithPreset(
+                urlList = listOf(url),
+                preferences =
+                    preferences.copy(
+                        extractAudio = !asVideo,
+                        formatIdString =
+                            if (asVideo) QUICK_VIDEO_FORMAT else QUICK_AUDIO_FORMAT,
+                    ),
+            )
+        )
+    }
+
     if (!isCommandFlow) {
         when (val info = infoState) {
+            SheetInfoState.Quick ->
+                ClassicQuickSheet(
+                    onQuickDownload = startQuickDownload,
+                    onShowAll = { fullListRequested = true },
+                )
+
             is SheetInfoState.Loading -> ClassicSheetLoading()
             is SheetInfoState.Done -> {
                 val options = remember(info.info) { info.info.buildSheetOptions() }
@@ -1603,6 +1657,176 @@ private fun QualityOptionRow(
                 modifier = Modifier.size(24.dp),
                 tint = if (selected) primary else MaterialTheme.colorScheme.outline,
             )
+        }
+    }
+}
+
+// GetTube build-16: the stage-1 quick sheet — shown instantly when the
+// download sheet opens, before any metadata fetch. Offers the two formats
+// that exist on virtually every public YouTube video (360p progressive MP4
+// and 128k AAC audio); tapping one starts the download right away, and the
+// full quality list stays available on demand below.
+@Composable
+private fun QuickOptionCard(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    title: String,
+    desc: String,
+    badge: String,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border =
+            BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+            ),
+    ) {
+        Row(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier.size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        modifier =
+                            Modifier.clip(RoundedCornerShape(999.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                    ) {
+                        Text(
+                            text = badge,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
+                Text(
+                    text = desc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Filled.Download,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClassicQuickSheet(
+    modifier: Modifier = Modifier,
+    onQuickDownload: (Boolean) -> Unit,
+    onShowAll: () -> Unit,
+) {
+    val maxSheetHeight = LocalConfiguration.current.screenHeightDp.dp * 0.85f
+
+    Column(modifier = modifier.fillMaxWidth().heightIn(max = maxSheetHeight)) {
+        Column(
+            modifier =
+                Modifier.weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.quick_sheet_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.quick_sheet_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(10.dp))
+            QuickOptionCard(
+                icon = Icons.Outlined.Videocam,
+                title = stringResource(R.string.quick_video_title),
+                desc = stringResource(R.string.quick_video_desc),
+                badge = stringResource(R.string.quick_badge_instant),
+                onClick = { onQuickDownload(true) },
+            )
+            QuickOptionCard(
+                icon = Icons.Outlined.MusicNote,
+                title = stringResource(R.string.quick_audio_title),
+                desc = stringResource(R.string.quick_audio_desc),
+                badge = stringResource(R.string.quick_badge_instant),
+                onClick = { onQuickDownload(false) },
+            )
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                thickness = Dp.Hairline,
+            )
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(onClick = onShowAll)
+                        .padding(horizontal = 4.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.HighQuality,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.quick_show_all),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = stringResource(R.string.quick_show_all_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

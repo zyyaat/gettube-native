@@ -485,4 +485,13 @@
     <string name="quality_sheet_fallback">تنزيل بالإعدادات المحفوظة</string>
     <string name="playlist_sheet_subtitle">قائمة تشغيل — سيتم تنزيل كل المقاطع</string>
     <string name="playlist_download_all">تنزيل القائمة كاملة</string>
+    <string name="quick_sheet_title">تنزيل سريع</string>
+    <string name="quick_sheet_subtitle">جودات جاهزة تبدأ في الحال — أو افتح القائمة الكاملة</string>
+    <string name="quick_badge_instant">فوري</string>
+    <string name="quick_video_title">MP4 360p</string>
+    <string name="quick_video_desc">فيديو + صوت في ملف واحد — بدون دمج أو معالجة</string>
+    <string name="quick_audio_title">الصوت فقط — M4A</string>
+    <string name="quick_audio_desc">جودة قياسية 128k — بتشتغل في أي مكان</string>
+    <string name="quick_show_all">عرض كل الجودات…</string>
+    <string name="quick_show_all_desc">من 480p لحد 4K — بياخد ثواني</string>
 </resources>

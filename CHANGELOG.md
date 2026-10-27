@@ -2,6 +2,28 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.5.0] - build-16
+
+### Added — two-stage download: instant quick options, full list on demand
+
+- The download sheet no longer waits for any network fetch before showing
+  anything. It now opens **instantly** on a "Quick download" stage with two
+  formats that exist on virtually every public YouTube video:
+  - **MP4 360p** — video + audio already merged in one file, no merging, no
+    processing (itag 18)
+  - **Audio only — M4A** — standard 128k AAC (itag 140)
+- Tapping a quick row starts the download immediately — the sheet closes and
+  the download card appears at once. yt-dlp resolves the exact media URL
+  during the download itself, so choosing a quick format still costs zero
+  metadata round-trips
+- "Show all qualities…" is the only action that triggers the full fetch
+  (480p → 4K + audio rows). It reuses the in-memory info cache, so after the
+  first fetch the full list opens near-instantly for the same video
+- Playlist links (`…/playlist?list=…`) and non-YouTube URLs skip the quick
+  stage entirely and behave exactly like previous builds; watch URLs that
+  merely carry a `&list=…` stay quick because every request is pinned with
+  `--no-playlist`
+
 ## [1.4.3] - build-15
 
 ### Fixed — the native InnerTube fast path crashed on devices below Android 11
