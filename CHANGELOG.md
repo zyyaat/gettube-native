@@ -2,6 +2,38 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.8] - build-21
+
+### Fixed — the "fetches the video info a second time, sits forever, then downloads" delay
+
+User verdict on 1.4.7: "It's fine, but it keeps preparing the video info a
+second time in the download page, sits for a long time, then downloads."
+
+Root cause: the download engine reused the quality sheet's cached JSON via
+`--load-info-json` — but when the sheet's fetch came from the native
+InnerTube fast path, that JSON's media URLs are InnerTube URLs that
+googlevideo increasingly refuses or **tarpits** for that client (SABR /
+PO-token gating — the same 2025-2026 enforcement wave behind the
+bot-checks). A tarpitted URL burns the whole socket-timeout × retries
+budget (15s × 3 ≈ up to a minute of the task sitting at 0% "fetching info")
+before the recovery extraction even starts; build-17 had already proved
+on-device that cached-JSON downloads can fail and need recovery. The user
+saw exactly that: a second "info fetch" (the recovery extraction's yt-dlp
+progress lines), a long wait, then the download.
+
+- **Native JSON is never handed to downloads anymore**: info-cache entries
+  are now tagged with their source engine; JSON synthesized by the native
+  InnerTube fetcher is skipped for `--load-info-json` and the download goes
+  straight to the pinned fresh extraction (~2-4s with the warm persistent
+  yt-dlp cache and the v1.4.7 anonymous cookies) — the exact proven path
+  the quality sheet trusts. yt-dlp-produced JSON (real downloadable URLs)
+  is still reused as before for the zero-extraction fast start.
+- **Probe-grade bounds for any cached-JSON attempt** (socket-timeout 5,
+  retries 1, fragment-retries 1): a stale JSON now fails in seconds instead
+  of burning up to a minute, so recovery always starts promptly.
+- The info-fetch fast path (native → pinned, ~4s), the download engine
+  options and the queue dispatcher are untouched.
+
 ## [1.4.7] - build-20
 
 ### Added — zero-setup anonymous cookies (SnapTube-style, NO login) + faster recovery

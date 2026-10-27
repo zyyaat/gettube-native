@@ -141,6 +141,7 @@ object DownloadUtil {
         val info: VideoInfo,
         val rawJson: String,
         val savedAt: Long,
+        val fromNativeEngine: Boolean,
     )
 
     private val infoCacheLock = Any()
@@ -168,10 +169,11 @@ object DownloadUtil {
         playlistIndex: Int?,
         info: VideoInfo,
         rawJson: String,
+        fromNativeEngine: Boolean,
     ) {
         synchronized(infoCacheLock) {
             infoCache[infoCacheKey(url, playlistIndex)] =
-                CachedVideoInfo(info, rawJson, System.currentTimeMillis())
+                CachedVideoInfo(info, rawJson, System.currentTimeMillis(), fromNativeEngine)
         }
     }
 
@@ -185,6 +187,26 @@ object DownloadUtil {
             getCachedInfo(url, null)
                 ?: getCachedInfo(videoInfo.originalUrl.orEmpty(), null)
                 ?: return null
+        // GetTube build-21: JSON synthesized by the native InnerTube fetcher
+        // carries InnerTube media URLs that googlevideo increasingly refuses
+        // or TARPITS for that client (SABR / PO-token gating — the same
+        // 2025-2026 enforcement wave behind the bot-checks). A refused URL
+        // fails fast, but a tarpitted one burns the whole socket-timeout x
+        // retries budget (15s x 3 = up to ~60s of the task sitting at 0%
+        // "fetching info") before the recovery extraction even starts — the
+        // exact "stays long, then downloads" pattern reported on v1.4.7
+        // (build-17 already proved on-device that cached-JSON downloads can
+        // fail and need recovery). So native JSON never enters the download
+        // run: the pinned fresh extraction (~2-4s warm cache, cookies) is the
+        // proven, reliable source of downloadable URLs. JSON produced by
+        // yt-dlp itself (real downloadable URLs) is still reused as before.
+        if (cached.fromNativeEngine) {
+            Log.i(
+                TAG,
+                "download: cached native JSON skipped for --load-info-json (SABR/tarpit risk) -> pinned extraction",
+            )
+            return null
+        }
         return runCatching {
             val file = File(context.cacheDir, "gettube_info_$taskId.json")
             file.writeText(cached.rawJson)
@@ -374,7 +396,7 @@ object DownloadUtil {
                 trail.append(" | native=OK ").append(nativeMs).append("ms")
                 Log.i(TAG, "fetch trail: $trail")
                 val (info, rawJson) = nativeInfo
-                cacheVideoInfo(url, playlistIndex, info, rawJson)
+                cacheVideoInfo(url, playlistIndex, info, rawJson, fromNativeEngine = true)
                 return Result.success(info)
             }
             val nativeReason =
@@ -462,7 +484,7 @@ object DownloadUtil {
                     .append("ms")
                 Log.i(TAG, "fetch trail: $trail")
                 val (info, rawJson) = pinnedInfo
-                cacheVideoInfo(url, playlistIndex, info, rawJson)
+                cacheVideoInfo(url, playlistIndex, info, rawJson, fromNativeEngine = false)
                 return Result.success(info)
             }
             trail
@@ -507,7 +529,7 @@ object DownloadUtil {
                         .append(System.currentTimeMillis() - defaultStart)
                         .append("ms")
                     Log.i(TAG, "fetch trail: $trail")
-                    cacheVideoInfo(url, playlistIndex, info, rawJson)
+                    cacheVideoInfo(url, playlistIndex, info, rawJson, fromNativeEngine = false)
                     Result.success(info)
                 },
                 onFailure = { th ->
@@ -1034,6 +1056,11 @@ object DownloadUtil {
             // download starts on the bytes right away instead of sitting at 0%
             // while the video is re-analyzed. yt-dlp ignores the positional URL
             // in this mode and falls back to re-extraction if the JSON is stale.
+            // GetTube build-21: only yt-dlp-produced JSON is reused here —
+            // JSON synthesized by the native InnerTube fetcher is deliberately
+            // excluded (see getReusableInfoJsonFile: its media URLs get
+            // refused/tarpitted by googlevideo, which is the root cause of the
+            // v1.4.7 "sits forever, then downloads" delay).
             val cachedInfoJson =
                 if (playlistItem == 0 && videoClips.isEmpty()) {
                     getReusableInfoJsonFile(url, videoInfo, taskId)
@@ -1056,11 +1083,16 @@ object DownloadUtil {
 
             // GetTube build-17/18: buildRequest is callable per attempt.
             // Attempt 1 runs with the sheet's cached JSON (--load-info-json,
-            // zero extraction). If that fails, the recovery attempts extract
-            // fresh — first with the pinned PO-token-less client chain, and
-            // only then with yt-dlp's default chain as the last resort (the
-            // default chain is the one YouTube's 2025-2026 bot-check wave
-            // hits hardest: "Sign in to confirm you're not a bot").
+            // zero extraction) when that JSON was produced by yt-dlp itself.
+            // GetTube build-21: when the sheet's fetch came from the native
+            // InnerTube engine — or there is no cached JSON — attempt 1
+            // extracts fresh with the pinned PO-token-less client chain (the
+            // proven ~2-4s path the quality sheet trusts; native media URLs
+            // are excluded from downloads, see getReusableInfoJsonFile). If
+            // that fails, the recovery attempt re-extracts with yt-dlp's
+            // default chain as the last resort (the default chain is the one
+            // YouTube's 2025-2026 bot-check wave hits hardest: "Sign in to
+            // confirm you're not a bot").
             fun buildRequest(useCachedJson: Boolean, pinClients: Boolean): YoutubeDLRequest {
                 pathBuilder.setLength(0)
                 outputBuilder.setLength(0)
@@ -1073,6 +1105,15 @@ object DownloadUtil {
                     enablePersistentYtDlpCache()
                     if (useCachedJson && cachedInfoJson != null) {
                         addOption("--load-info-json", cachedInfoJson.absolutePath)
+                        // GetTube build-21: a cached JSON that loads but points
+                        // at refused/expired media URLs must not burn the full
+                        // download-grade wait budget before the recovery
+                        // extraction starts — probe-grade bounds fail it in
+                        // seconds instead of up to a minute of sitting at 0%.
+                        addOption("--socket-timeout", "5")
+                        addOption("--retries", "1")
+                        addOption("--file-access-retries", "2")
+                        addOption("--fragment-retries", "1")
                     } else {
                         // No reusable JSON: this run extracts on its own, so skip
                         // the same round-trips the sheet fetch skips as well, and
@@ -1082,17 +1123,18 @@ object DownloadUtil {
                         // per entry).
                         if (pinClients) pinFastYoutubeClients()
                         addOption("--extractor-args", "youtube:player_skip=webpage,configs")
+                        // GetTube build-17: bound every network wait. Until now
+                        // the download command had NO socket timeout and
+                        // yt-dlp's default 10 retries — a media URL that
+                        // silently stalls (PO-token gated googlevideo,
+                        // black-holed connection) could keep the task spinning
+                        // forever. These bounds turn that into a visible
+                        // failure the recovery attempt can then heal.
+                        addOption("--socket-timeout", "15")
+                        addOption("--retries", "3")
+                        addOption("--file-access-retries", "3")
+                        addOption("--fragment-retries", "3")
                     }
-                    // GetTube build-17: bound every network wait. Until now the
-                    // download command had NO socket timeout and yt-dlp's default
-                    // 10 retries — a media URL that silently stalls (PO-token
-                    // gated googlevideo, black-holed connection) could keep the
-                    // task spinning forever. These bounds turn that into a
-                    // visible failure the recovery attempt can then heal.
-                    addOption("--socket-timeout", "15")
-                    addOption("--retries", "3")
-                    addOption("--file-access-retries", "3")
-                    addOption("--fragment-retries", "3")
                     //                addOption("-v")
                     if (cookies) {
                         enableCookies(userAgentString)
@@ -1295,14 +1337,14 @@ object DownloadUtil {
             failureStages += "d1" to firstError
 
             // GetTube build-17/18: bounded automatic recovery. The cached JSON
-            // (native InnerTube URLs) can be refused by googlevideo (SABR /
-            // PO-token gating, expired signatures), so hand the job to fresh
-            // yt-dlp extractions: first the pinned JS-less chain — the client
-            // family YouTube's bot-check spares on most networks — and only
-            // then the default chain as the last resort. With no cached JSON,
-            // attempt 1 already ran pinned, so recovery goes straight to the
-            // default chain. Every attempt is bounded by the timeout/retry
-            // options in buildRequest, so this can never hang forever.
+            // can be stale (expired signatures / refused media URLs), so hand
+            // the job to fresh yt-dlp extractions: with a cached-JSON attempt
+            // behind us, first the pinned JS-less chain — the client family
+            // YouTube's bot-check spares on most networks — and only then the
+            // default chain as the last resort. With no cached JSON, attempt 1
+            // already ran pinned, so recovery goes straight to the default
+            // chain. Every attempt is bounded by the timeout/retry options in
+            // buildRequest, so this can never hang forever.
             val recoveryRequests =
                 if (usingCachedJson) {
                     listOf(
