@@ -218,22 +218,30 @@ class DownloaderV2Impl(private val appContext: Context) : DownloaderV2, KoinComp
 
     /** Processes pending tasks, prioritizing downloads. */
     private fun doYourWork() {
-        if (taskStateMap.countRunning() >= MAX_CONCURRENCY) return
+        // GetTube build-17: a transient race (e.g. a task removed or canceled
+        // while the dispatcher held a stale snapshot) used to throw out of this
+        // method and KILL the snapshotFlow collector — every task enqueued
+        // afterwards would then sit in Idle/"enqueued" forever with nobody to
+        // start it (the endless "standby" state). Contain the failure so the
+        // dispatcher survives and the queue keeps moving.
+        runCatching {
+            if (taskStateMap.countRunning() >= MAX_CONCURRENCY) return
 
-        taskStateMap.entries
-            .sortedBy { (_, state) -> state.downloadState }
-            .firstOrNull { (_, state) ->
-                state.downloadState == ReadyWithInfo || state.downloadState == Idle
-            }
-            ?.let { (task, state) ->
-                when (state.downloadState) {
-                    Idle -> task.prepare()
-                    ReadyWithInfo -> task.download()
-                    else -> {
-                        throw IllegalStateException()
+            taskStateMap.entries
+                .sortedBy { (_, state) -> state.downloadState }
+                .firstOrNull { (_, state) ->
+                    state.downloadState == ReadyWithInfo || state.downloadState == Idle
+                }
+                ?.let { (task, state) ->
+                    when (state.downloadState) {
+                        Idle -> task.prepare()
+                        ReadyWithInfo -> task.download()
+                        else -> {
+                            throw IllegalStateException()
+                        }
                     }
                 }
-            }
+        }.onFailure { Log.e(TAG, "task dispatch failed", it) }
     }
 
     private fun Task.prepare() {

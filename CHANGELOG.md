@@ -2,6 +2,44 @@
 
 GetTube release notes — built on the Seal codebase (GPL-3.0).
 
+## [1.4.4] - build-17
+
+### Fixed — downloads stalling forever in a "loading" spinner
+
+- Reported from a real device on 1.4.3: the quality sheet fetches in ~4s
+  (native InnerTube path working as designed), the download card shows the
+  correct title/thumbnail, no double fetch happens — and then the download
+  never starts, spinning endlessly in a standby-like state
+- Root cause, from tracing the download path line by line: the task state
+  machine was never stuck — the yt-dlp DOWNLOAD process itself was. The
+  download command had **no `--socket-timeout`** (only the fetch commands
+  had one) and yt-dlp's default 10 HTTP retries, so a media URL that is
+  refused or silently stalled by googlevideo (the cached JSON carries
+  InnerTube URLs generated without a PO token, and yt-dlp re-sends them
+  with its own default Chrome-like headers) could keep the task on an
+  indeterminate spinner for many minutes — or forever on a black-holed
+  connection
+
+### Changed — bounded, self-healing, visible downloads
+
+- The download command is now bounded: `--socket-timeout 15`,
+  `--retries 3`, `--file-access-retries 3`, `--fragment-retries 3` — a dead
+  media URL now fails visibly in seconds-to-a-minute instead of hanging
+- One automatic recovery attempt: if the download fails while running on
+  the sheet's cached JSON (`--load-info-json`), the exact same command is
+  rebuilt **without** the JSON so yt-dlp extracts fresh with its own
+  default client chain (the one proven to work on-device since the first
+  screenshots) and the download completes instead of dead-ending. The
+  fast-fetch logic is untouched; this only runs after a download failure
+- A download diagnostic trail (same idea as the fetch trail of 1.4.1):
+  failures now carry `dl fmt=... json=hit|miss | d1=FAIL(reason) Nms |
+  retry=default-extract | last=<last yt-dlp output line>` — shown on the
+  download card's error line and in the notification report, ending the
+  blind spot in the download phase
+- The task dispatcher (`doYourWork`) is now exception-contained: a transient
+  race used to be able to kill the snapshotFlow collector permanently,
+  leaving every task enqueued afterwards stuck in Idle/"enqueued" forever
+
 ## [1.4.3] - build-15
 
 ### Fixed — the native InnerTube fast path crashed on devices below Android 11
